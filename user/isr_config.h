@@ -1,0 +1,65 @@
+
+
+#ifndef _isr_config_h
+#define _isr_config_h
+
+#define CCU6_0_CH0_INT_SERVICE  IfxSrc_Tos_cpu0     
+#define CCU6_0_CH0_ISR_PRIORITY 30                  
+
+#define CCU6_0_CH1_INT_SERVICE  IfxSrc_Tos_cpu0
+#define CCU6_0_CH1_ISR_PRIORITY 33
+
+#define CCU6_1_CH0_INT_SERVICE  IfxSrc_Tos_cpu0
+#define CCU6_1_CH0_ISR_PRIORITY 32
+
+#define CCU6_1_CH1_INT_SERVICE  IfxSrc_Tos_cpu0
+#define CCU6_1_CH1_ISR_PRIORITY 31
+
+//
+
+//
+
+//
+
+#define ERU_DMA_INT_SERVICE     IfxSrc_Tos_cpu0 
+#define ERU_DMA_INT_PRIO        60  
+
+#define EXTI_CH0_CH4_INT_SERVICE IfxSrc_Tos_cpu0    
+#define EXTI_CH0_CH4_INT_PRIO   255                 
+
+#define EXTI_CH1_CH5_INT_SERVICE IfxSrc_Tos_dma     
+#define EXTI_CH1_CH5_INT_PRIO   7                   
+
+#define EXTI_CH2_CH6_INT_SERVICE IfxSrc_Tos_dma     
+#define EXTI_CH2_CH6_INT_PRIO   6                   
+
+#define EXTI_CH3_CH7_INT_SERVICE IfxSrc_Tos_cpu0    
+#define EXTI_CH3_CH7_INT_PRIO   254                 
+
+#define DMA_INT_SERVICE_1       IfxSrc_Tos_cpu0     
+#define DMA_INT_PRIO_1          0                   
+
+#define DMA_INT_SERVICE_2       IfxSrc_Tos_cpu0     
+#define DMA_INT_PRIO_2          0                  
+
+#define UART0_INT_SERVICE       IfxSrc_Tos_cpu0     
+#define UART0_TX_INT_PRIO       11                  
+#define UART0_RX_INT_PRIO       10                  
+#define UART0_ER_INT_PRIO       12                  
+
+#define UART1_INT_SERVICE       IfxSrc_Tos_cpu0
+#define UART1_TX_INT_PRIO       13
+#define UART1_RX_INT_PRIO       14
+#define UART1_ER_INT_PRIO       15
+
+#define UART2_INT_SERVICE       IfxSrc_Tos_cpu0
+#define UART2_TX_INT_PRIO       16
+#define UART2_RX_INT_PRIO       17
+#define UART2_ER_INT_PRIO       18
+
+#define UART3_INT_SERVICE       IfxSrc_Tos_cpu0
+#define UART3_TX_INT_PRIO       19
+#define UART3_RX_INT_PRIO       20
+#define UART3_ER_INT_PRIO       21
+
+#endif
