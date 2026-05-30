@@ -5,20 +5,32 @@
 
 #define ONE_TICK_DISTANCE                      0.000378f
 #define MAX_LENGTH_INDEX                       400        
-#define MAX_GPS_RECODE                         40         
-#define PORTION2_ROUTE_COUNT                   10
-#define PORTION2_ROUTE_MAX_POINTS              40
+#define MAX_GPS_RECODE                         72         
+#define PORTION2_ROUTE_COUNT                   9
+#define PORTION2_ROUTE_MAX_POINTS              39
 #define PORTION2_GPS_PER_ROUTE                 3
-#define PORTION2_TOTAL_GPS_COUNT               34
+#define PORTION2_TOTAL_GPS_COUNT               72
+#define PORTION2_ROUTE_1                       0
+#define PORTION2_ROUTE_2                       1
+#define PORTION2_ROUTE_3                       2
+#define PORTION2_ROUTE_4                       3
+#define PORTION2_ROUTE_5                       4
+#define PORTION2_ROUTE_ARRIVE_DIR_CHANGE      5
+#define PORTION2_ROUTE_START_DIR_CHANGE       6
+#define PORTION2_ROUTE_STRAIGHT               7
+#define PORTION2_ROUTE_SNAKE                  8
+#define PORTION_TWO_INDEX                      3
 #define M_PI                                   3.14159265358979323846f
 #define WHEEL_BASE                             0.724f     
 #define TRACK_WIDTH                            0.594f     
+#define GUANDAO_SPEED_TO_MPS                   (0.1f)
 #define MIN_SPEED                              10.0f      
 #define MAX_STEERING_RAD                       90.0f      
 #define SLIP_CHEAK_INDEX                       4.0f       
 #define START_GPS_FLAG                         1          
 #define ANGLE_CORRECT_KP                       0.0f
 #define CORRECT_ANGLE_1                        -90.0f     
+#define CORRECT_ANGLE_3                        180.0f
 
 typedef struct {
         float x;
@@ -56,6 +68,7 @@ typedef enum {
 
 extern SLIP_Cheak slip_state;
 extern guandao_state INS;                         
+extern guandao_state passage;                    //1 = route_setting_choice
 extern guandao_state portion_3;                     //2 = route_setting_choice
 extern guandao_state portion_2;                    //3 = route_setting_choice
 extern float out_v_l ;
@@ -72,11 +85,15 @@ extern float recode_threshold ;//RECORD_THRESHOLD
 extern int16 preview_spets ;       //PREVIEW_SPETS
 extern float final_dsts ;
 extern float guandao_debug_distance;             
+extern float guandao_debug_angle_diff;
+extern float guandao_debug_dist_final;
 extern uint8 guandao_debug_stop_reason;          
 extern uint8 portion2_back_channel;
 extern uint8 portion2_record_route;
 extern uint8 portion2_record_state;
 extern uint8 portion2_selected_route;
+extern uint8 portion2_run_reverse;
+extern uint8 portion2_run_drive_reverse;
 extern uint8 portion2_run_last_rx;
 extern uint16 portion2_run_rx_count;
 extern uint8 portion2_run_reject_reason;
@@ -130,6 +147,8 @@ void portion2_set_back_channel(uint8 channel);
 void portion2_record_reset(void);
 void portion2_record_task(void);
 void portion2_run_select_route(uint8 route_id);
+void portion2_run_select_reverse_route(uint8 route_id);
+void portion2_run_select_back_route(uint8 route_id);
 void portion2_run_stop(void);
 void portion2_run_task(void);
 

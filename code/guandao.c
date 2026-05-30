@@ -27,12 +27,16 @@ uint8 portion2_back_channel = 2;
 uint8 portion2_record_route = 0;
 uint8 portion2_record_state = 0;
 uint8 portion2_selected_route = 0;
+uint8 portion2_run_reverse = 0;
+uint8 portion2_run_drive_reverse = 0;
 uint8 portion2_run_last_rx = 0;
 uint16 portion2_run_rx_count = 0;
 uint8 portion2_run_reject_reason = 0;
 uint16 portion2_route_length[PORTION2_ROUTE_COUNT] = {0};
 uint8 portion2_route_gps_count[PORTION2_ROUTE_COUNT] = {0};
-const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {3, 3, 3, 3, 3, 3, 3, 3, 5, 5};
+const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {8, 8, 8, 8, 8, 8, 8, 8, 8};
+static uint8 portion2_gps_auto_has_point[PORTION2_ROUTE_COUNT] = {0};
+static state_t portion2_gps_auto_last_state[PORTION2_ROUTE_COUNT];
 
 int16 daoche_point_length = 0;    
 uint8 daoche_flag =0;                    
@@ -43,6 +47,8 @@ static uint8 portion2_state_flag = 0;
 
 #define GUANDAO_START_SEARCH_POINTS    10
 #define GUANDAO_TRACE_SEARCH_POINTS    8
+#define GUANDAO_FRONT_TARGET_ANGLE     100.0f
+#define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 #define PORTION1_PARK_INDEX_WINDOW     40
 #define PORTION1_PARK_ENTER_DISTANCE   2.0f
 #define PORTION1_PARK_CRAWL_DISTANCE   0.8f
@@ -75,6 +81,13 @@ static state_t guandao_route_point(guandao_state *state, int index)
     return state->recode_map[index];
 }
 
+static float guandao_normalize_angle(float angle)
+{
+    while(angle > 180.0f) angle -= 360.0f;
+    while(angle < -180.0f) angle += 360.0f;
+    return angle;
+}
+
 static int guandao_find_closest_index(guandao_state *state, int start_index, int end_index)
 {
     int best_index = start_index;
@@ -93,6 +106,37 @@ static int guandao_find_closest_index(guandao_state *state, int start_index, int
         if(distance + 0.05f < best_distance)
         {
             best_distance = distance;
+            best_index = i;
+        }
+    }
+
+    return best_index;
+}
+
+static int guandao_find_front_index(guandao_state *state, int start_index, int end_index)
+{
+    int best_index = start_index;
+    float best_score = 1000000.0f;
+    int16 route_length = guandao_route_length(state);
+
+    if(route_length <= 0) return 0;
+    if(start_index < 0) start_index = 0;
+    if(end_index >= route_length) end_index = route_length - 1;
+    if(start_index > end_index) return start_index;
+
+    for(int i = start_index; i <= end_index; i++)
+    {
+        state_t point = guandao_route_point(state, i);
+        float dx = point.x - state->current_state.x;
+        float dy = point.y - state->current_state.y;
+        float distance = hypotf(dx, dy);
+        float angle_to_point = atan2f(dx, dy) / M_PI * 180.0f;
+        float angle_error = fabsf(guandao_normalize_angle(angle_to_point - state->current_state.theta));
+        float score = distance + angle_error * 0.015f;
+
+        if(angle_error <= GUANDAO_FRONT_TARGET_ANGLE && score < best_score)
+        {
+            best_score = score;
             best_index = i;
         }
     }
@@ -376,8 +420,23 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     float angle_to_target = atan2f(dx,dy)/M_PI*180.0f;
     float angle_diff = angle_to_target - state->current_state.theta;
 
-    while (angle_diff > 180.0f) angle_diff -= 360.0f;
-    while (angle_diff < -180.0f) angle_diff += 360.0f;
+    angle_diff = guandao_normalize_angle(angle_diff);
+    if(fabsf(angle_diff) > GUANDAO_FRONT_TARGET_ANGLE)
+    {
+        int front_index = guandao_find_front_index(state, state->current_point_index, search_end_index);
+        if(front_index > state->current_point_index)
+        {
+            state->current_point_index = front_index;
+            target_point = guandao_route_point(state, state->current_point_index);
+            dx = target_point.x - current_point.x;
+            dy = target_point.y - current_point.y;
+            distance_to_target = hypotf(dx, dy);
+            guandao_debug_distance = distance_to_target;
+            angle_to_target = atan2f(dx,dy)/M_PI*180.0f;
+            angle_diff = guandao_normalize_angle(angle_to_target - state->current_state.theta);
+            guandao_debug_stop_reason = 5;
+        }
+    }
     guandao_debug_angle_diff = angle_diff;
 
     
@@ -799,12 +858,30 @@ static void portion2_record_gps_point(void)
     passage.recode_gpsmap[gps_index].cheak_flag = portion2_route_length[portion2_record_route];
     portion2_route_gps_count[portion2_record_route]++;
     passage.gps_recode_length = portion2_route_gps_offset(portion2_record_route) + portion2_route_gps_count[portion2_record_route];
+    portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
+    portion2_gps_auto_has_point[portion2_record_route] = 1;
     Buzzer_check(30);
+}
+
+static void portion2_auto_record_gps_point(void)
+{
+    if(!GPS_WORK_FLAG) return;
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
+    if(portion2_route_gps_count[portion2_record_route] >= portion2_route_required_gps(portion2_record_route)) return;
+
+    if(!portion2_gps_auto_has_point[portion2_record_route] ||
+       get_distance(passage.current_state, portion2_gps_auto_last_state[portion2_record_route]) >= PORTION2_AUTO_GPS_RECORD_DIST)
+    {
+        portion2_record_gps_point();
+    }
 }
 
 void portion2_reset(void)
 {
     portion2_state_flag = 0;
+    portion2_run_reverse = 0;
+    portion2_run_drive_reverse = 0;
+    daoche_flag = 0;
     portion2_clear_route();
     out_v_l = 0;
     out_v_r = 0;
@@ -846,6 +923,7 @@ void portion2_record_reset(void)
     {
         portion2_route_length[i] = 0;
         portion2_route_gps_count[i] = 0;
+        portion2_gps_auto_has_point[i] = 0;
     }
     passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
     passage.gps_recode_length = 0;
@@ -874,7 +952,9 @@ void portion2_record_task(void)
                 passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
                 portion2_route_length[portion2_record_route] = 0;
                 portion2_route_gps_count[portion2_record_route] = 0;
+                portion2_gps_auto_has_point[portion2_record_route] = 0;
                 portion2_record_point();
+                portion2_auto_record_gps_point();
                 portion2_record_state = 1;
                 Buzzer_check(50);
             }
@@ -882,10 +962,10 @@ void portion2_record_task(void)
         case 1:
             update_state(&passage, &guandao_ecd);
             portion2_record_point();
+            portion2_auto_record_gps_point();
             if(key3_flag)
             {
                 key3_flag = 0;
-                if(GPS_WORK_FLAG) portion2_record_gps_point();
             }
             if(key2_flag)
             {
@@ -931,6 +1011,10 @@ void portion2_record_task(void)
 void portion2_run_select_route(uint8 route_id)
 {
     portion2_run_reject_reason = 0;
+    portion2_run_reverse = 0;
+    portion2_run_drive_reverse = 0;
+    daoche_flag = 0;
+    conrtol_mode = GUANDAO;
     if(route_id >= PORTION2_ROUTE_COUNT)
     {
         portion2_run_reject_reason = 1;
@@ -945,9 +1029,60 @@ void portion2_run_select_route(uint8 route_id)
     portion2_state_flag = 1;
 }
 
+void portion2_run_select_reverse_route(uint8 route_id)
+{
+    portion2_run_reject_reason = 0;
+    portion2_run_reverse = 0;
+    portion2_run_drive_reverse = 0;
+    daoche_flag = 0;
+    conrtol_mode = GUANDAO;
+    if(route_id > PORTION2_ROUTE_5)
+    {
+        portion2_run_reject_reason = 3;
+        return;
+    }
+    if(portion2_route_length[route_id] == 0)
+    {
+        portion2_run_reject_reason = 2;
+        return;
+    }
+    portion2_selected_route = route_id;
+    portion2_run_reverse = 1;
+    portion2_state_flag = 1;
+}
+
+void portion2_run_select_back_route(uint8 route_id)
+{
+    portion2_run_reject_reason = 0;
+    portion2_run_reverse = 0;
+    portion2_run_drive_reverse = 0;
+    daoche_flag = 0;
+    conrtol_mode = GUANDAO;
+    if(route_id != PORTION2_ROUTE_STRAIGHT && route_id != PORTION2_ROUTE_SNAKE)
+    {
+        portion2_run_reject_reason = 3;
+        return;
+    }
+    if(portion2_route_length[route_id] == 0)
+    {
+        portion2_run_reject_reason = 2;
+        return;
+    }
+    portion2_selected_route = route_id;
+    portion2_run_reverse = 1;
+    portion2_run_drive_reverse = 1;
+    daoche_flag = 1;
+    conrtol_mode = DAOCHE;
+    portion2_state_flag = 1;
+}
+
 void portion2_run_stop(void)
 {
     portion2_state_flag = 0;
+    portion2_run_reverse = 0;
+    portion2_run_drive_reverse = 0;
+    daoche_flag = 0;
+    conrtol_mode = GUANDAO;
     out_v_l = 0;
     out_v_r = 0;
     out_servo = 0;
@@ -968,12 +1103,21 @@ void portion2_run_task(void)
         case 1:
             portion2_clear_route();
             Encoder_Get(&guandao_ecd);
+            daoche_flag = portion2_run_drive_reverse;
+            conrtol_mode = portion2_run_drive_reverse ? DAOCHE : GUANDAO;
             offset = portion2_route_offset(portion2_selected_route);
             len = portion2_route_length[portion2_selected_route];
             if(len > PORTION2_ROUTE_MAX_POINTS) len = PORTION2_ROUTE_MAX_POINTS;
             for(uint16 i = 0; i < len && i < MAX_LENGTH_INDEX; i++)
             {
-                portion_2.recode_map[i] = passage.recode_map[offset + i];
+                if(portion2_run_reverse)
+                {
+                    portion_2.recode_map[i] = passage.recode_map[offset + len - 1 - i];
+                }
+                else
+                {
+                    portion_2.recode_map[i] = passage.recode_map[offset + i];
+                }
             }
             portion_2.length_index = len;
             portion_2.gps_recode_length = portion2_route_gps_count[portion2_selected_route];
@@ -983,7 +1127,28 @@ void portion2_run_task(void)
             }
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
-                portion_2.recode_gpsmap[i] = passage.recode_gpsmap[portion2_route_gps_offset(portion2_selected_route) + i];
+                uint8 gps_offset = portion2_route_gps_offset(portion2_selected_route);
+                if(portion2_run_reverse)
+                {
+                    GPS_state gps_point = passage.recode_gpsmap[gps_offset + portion_2.gps_recode_length - 1 - i];
+                    if(gps_point.cheak_flag <= 0)
+                    {
+                        gps_point.cheak_flag = 0;
+                    }
+                    else if(gps_point.cheak_flag >= len)
+                    {
+                        gps_point.cheak_flag = 0;
+                    }
+                    else
+                    {
+                        gps_point.cheak_flag = len - gps_point.cheak_flag;
+                    }
+                    portion_2.recode_gpsmap[i] = gps_point;
+                }
+                else
+                {
+                    portion_2.recode_gpsmap[i] = passage.recode_gpsmap[gps_offset + i];
+                }
             }
             guandao_build_smooth_plan(&portion_2);
             portion2_state_flag = 2;
@@ -995,6 +1160,10 @@ void portion2_run_task(void)
                 out_v_l = 0;
                 out_v_r = 0;
                 out_servo = 0;
+                portion2_run_reverse = 0;
+                portion2_run_drive_reverse = 0;
+                daoche_flag = 0;
+                conrtol_mode = GUANDAO;
                 portion2_state_flag = 3;
             }
             break;
@@ -1003,6 +1172,10 @@ void portion2_run_task(void)
             out_v_r = 0;
             out_servo = 0;
             portion2_state_flag = 0;
+            portion2_run_reverse = 0;
+            portion2_run_drive_reverse = 0;
+            daoche_flag = 0;
+            conrtol_mode = GUANDAO;
             break;
         default:
             portion2_reset();
@@ -1028,6 +1201,8 @@ void portion2_run_task(void)
     ips200_show_int(X(17), Y(14), portion2_run_reject_reason, 2);
     ips200_show_string(X(1), Y(15), "Scn");
     ips200_show_int(X(6), Y(15), dot_matrix_screen_scan_count, 6);
+    ips200_show_string(X(13), Y(15), "Rev");
+    ips200_show_int(X(17), Y(15), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
 }
 
 void guandao_trace(guandao_state * state)

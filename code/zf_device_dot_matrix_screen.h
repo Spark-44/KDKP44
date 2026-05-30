@@ -23,6 +23,7 @@ void dot_matrix_screen_set_brightness   (uint16 brightness);
 void dot_matrix_screen_init             (void);
 void dot_matrix_screen_show_pattern     (uint8 index);
 void dot_matrix_screen_clear_pattern    (void);
+uint8 dot_matrix_screen_is_pattern_active(void);
 typedef enum
 {
     DOT_MATRIX_PATTERN_DOUBLE_FLASH = 0,   

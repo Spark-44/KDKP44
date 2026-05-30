@@ -26,6 +26,7 @@ extern uint8 key_mode2;
 extern uint8 CarGo_Flag;
 extern float *p;
 
+#define IPS200_TYPE     (IPS200_TYPE_SPI)
 #define X(x)                    8*(x)
 #define Y(y)                    16*(y)
 

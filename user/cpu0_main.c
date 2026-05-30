@@ -226,28 +226,41 @@ static void Portion2_Serial_Command_Update(void)
     uint8 data = 0;
     uint8 buffer[8];
     uint32 len = debug_read_ring_buffer(buffer, 8);
+    static uint8 reverse_route_pending = 0;
 
     for(uint32 i = 0; i < len; i++)
     {
         data = buffer[i];
-        if(data >= '1' && data <= '9')
+        if(data == '-')
         {
+            reverse_route_pending = 1;
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
-            voice_drive_action_stop();
-            portion2_run_select_route(data - '1');
         }
-        else if(data == '0')
+        else if(data >= '1' && data <= '9')
         {
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
             voice_drive_action_stop();
-            portion2_run_select_route(9);
+            if(reverse_route_pending && data >= '1' && data <= '5')
+            {
+                portion2_run_select_reverse_route(data - '1');
+            }
+            else if(reverse_route_pending && (data == '8' || data == '9'))
+            {
+                portion2_run_select_back_route(data - '1');
+            }
+            else
+            {
+                portion2_run_select_route(data - '1');
+            }
+            reverse_route_pending = 0;
         }
         else if(data >= 'A' && data <= 'H')
         {
+            reverse_route_pending = 0;
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
@@ -269,6 +282,7 @@ static void Portion2_Serial_Command_Update(void)
         }
         else if(data >= 'a' && data <= 'h')
         {
+            reverse_route_pending = 0;
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
@@ -286,16 +300,18 @@ static void Portion2_Serial_Command_Update(void)
             ips200_show_string(X(10), Y(15), "Act");
             ips200_show_int(X(15), Y(15), dot_matrix_screen_is_pattern_active(), 1);
         }
-        else if(data >= 'I' && data <= 'P')
+        else if(data >= 'M' && data <= 'P')
         {
+            reverse_route_pending = 0;
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
             portion2_run_stop();
             voice_drive_action_start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'I')));
         }
-        else if(data >= 'i' && data <= 'p')
+        else if(data >= 'm' && data <= 'p')
         {
+            reverse_route_pending = 0;
             portion2_run_last_rx = data;
             portion2_run_rx_count++;
             uart_write_byte(DEBUG_UART_INDEX, data);
@@ -467,4 +483,3 @@ int core0_main(void)
 }
 
 #pragma section all restore
-

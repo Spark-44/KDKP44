@@ -3,16 +3,10 @@
 #include "rear_motor/rear_motor.h"
 
 #define SUBJECT_2_FIXED_GUANDAO_SPEED_TO_MPS (0.1f)
-#define SUBJECT_2_FIXED_SPEED_MPS          (0.6f)
 #define SUBJECT_2_FIXED_TURN_SPEED_MPS     (0.35f)
-#define SUBJECT_2_FIXED_DISTANCE_M         (10.0f)
 #define SUBJECT_2_FIXED_TURN_ANGLE_DEG     (90.0f)
 #define SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG   (360.0f)
 #define SUBJECT_2_FIXED_STEER_DEG          (25.0f)
-#define SUBJECT_2_FIXED_SNAKE_STEER_DEG    (18.0f)
-#define SUBJECT_2_FIXED_SNAKE_PERIOD_MS    (900U)
-#define SUBJECT_2_FIXED_STRAIGHT_YAW_KP    (0.8f)
-#define SUBJECT_2_FIXED_STRAIGHT_STEER_MAX (10.0f)
 
 typedef enum
 
@@ -29,7 +23,6 @@ typedef struct
     float steer_deg;
     float stop_value;
     subject_2_fixed_stop_type_t stop_type;
-    uint8 snake_enable;
 } subject_2_fixed_action_t;
 
 typedef struct
@@ -45,12 +38,10 @@ typedef struct
 
 static const subject_2_fixed_action_t subject_2_fixed_actions[] =
 {
-    {VOICE_DRIVE_ACTION_FORWARD_10M,         SUBJECT_2_FIXED_SPEED_MPS,       0.0f,                            SUBJECT_2_FIXED_DISTANCE_M,       SUBJECT_2_FIXED_STOP_DISTANCE, 0},
-    {VOICE_DRIVE_ACTION_BACKWARD_10M,       -SUBJECT_2_FIXED_SPEED_MPS,       0.0f,                            SUBJECT_2_FIXED_DISTANCE_M,       SUBJECT_2_FIXED_STOP_DISTANCE, 0},
-    {VOICE_DRIVE_ACTION_CCW_CIRCLE,          SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW,      0},
-    {VOICE_DRIVE_ACTION_CW_CIRCLE,           SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW,      0},
-    {VOICE_DRIVE_ACTION_TURN_LEFT,           SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW,      0},
-    {VOICE_DRIVE_ACTION_TURN_RIGHT,          SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW,      0},
+    {VOICE_DRIVE_ACTION_CCW_CIRCLE,          SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
+    {VOICE_DRIVE_ACTION_CW_CIRCLE,           SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
+    {VOICE_DRIVE_ACTION_TURN_LEFT,           SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW},
+    {VOICE_DRIVE_ACTION_TURN_RIGHT,          SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW},
 };
 
 static subject_2_fixed_action_state_t subject_2_fixed_action_state = {VOICE_DRIVE_ACTION_NONE, 0, 0, 0.0f, 0.0f, 0.0f};
@@ -72,33 +63,6 @@ static float subject_2_fixed_yaw_step(float now, float last)
         diff += 360.0f;
     }
     return diff;
-}
-
-static float subject_2_fixed_limit_float(float value, float min, float max)
-{
-    if(value > max)
-    {
-        return max;
-    }
-    if(value < min)
-    {
-        return min;
-    }
-    return value;
-}
-
-static float subject_2_fixed_yaw_error(float target, float current)
-{
-    float error = target - current;
-    while(error > 180.0f)
-    {
-        error -= 360.0f;
-    }
-    while(error < -180.0f)
-    {
-        error += 360.0f;
-    }
-    return error;
 }
 
 static void subject_2_fixed_apply(float speed_mps, float steer_deg)
@@ -127,7 +91,10 @@ static const subject_2_fixed_action_t *subject_2_fixed_find_action(voice_drive_a
 static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32 elapsed_ms, float distance_m, float yaw_delta, float yaw_target, float yaw_current, subject_2_fixed_action_output_t *output)
 {
     const subject_2_fixed_action_t *action;
-    float steer_correction;
+
+    (void)elapsed_ms;
+    (void)yaw_target;
+    (void)yaw_current;
 
     if(output == 0)
     {
@@ -147,21 +114,6 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
 
     output->speed_mps = action->speed_mps;
     output->steer_deg = action->steer_deg;
-
-    if(action->snake_enable)
-    {
-        output->steer_deg = (elapsed_ms / SUBJECT_2_FIXED_SNAKE_PERIOD_MS) % 2U ? -action->steer_deg : action->steer_deg;
-    }
-
-    if(mode == VOICE_DRIVE_ACTION_FORWARD_10M || mode == VOICE_DRIVE_ACTION_BACKWARD_10M)
-    {
-        steer_correction = subject_2_fixed_yaw_error(yaw_target, yaw_current) * SUBJECT_2_FIXED_STRAIGHT_YAW_KP;
-        if(mode == VOICE_DRIVE_ACTION_BACKWARD_10M)
-        {
-            steer_correction = -steer_correction;
-        }
-        output->steer_deg = subject_2_fixed_limit_float(steer_correction, -SUBJECT_2_FIXED_STRAIGHT_STEER_MAX, SUBJECT_2_FIXED_STRAIGHT_STEER_MAX);
-    }
 
     if(action->stop_type == SUBJECT_2_FIXED_STOP_DISTANCE && distance_m >= action->stop_value)
     {

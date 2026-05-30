@@ -34,7 +34,7 @@ void IMU_gyro_Offset_Init(void)
 void IMU_GetValues(void)
 {
 
-    IMU_Data.gyro_z = ((float) imu963ra_gyro_z - Gyro_Offset.Zdata)* PI / 180.0f/ 16.384f;
+    IMU_Data.gyro_z = ((float) imu963ra_gyro_z - Gyro_Offset.Zdata)* PI / 180.0f/ 14.3f;
 
     if(IMU_Data.gyro_z<0.025&&IMU_Data.gyro_z>-0.025)
     {

@@ -9,6 +9,9 @@ extern float kp ;
 extern float ki ;
 extern float kd ;
 
+#define FLASH_SECTION_INDEX             (0)
+#define SPEED_PID_PAGE_INDEX            (11)
+#define RECODE_MAP_POINTS_INDEX         (10)
 #define RECODE_PASSAGE                  (9)   
 #define RECODE_PASSAGE_TWO                  (8)   
 #define RECODE_PASSAGE_THREE                  (7)   
@@ -41,4 +44,3 @@ void Flash_Main_Read(void);
 
 void Flash_Store_Mode(uint8 route_setting_choice);
 #endif /* CODE_FLASH_H_ */
-
