@@ -48,10 +48,9 @@ extern Encoder_t Steer_ecd;
 #define KEY2                    (P20_7)
 #define KEY3                    (P11_2)
 #define KEY4                    (P11_3)
-#define SWITCH2                 (P33_12)
 #define SWITCH1                 (P33_11)
 
-#define SERVO_MOTOR_PWM             (ATOM1_CH1_P33_9)
+#define SERVO_MOTOR_PWM             (ATOM2_CH4_P33_8)
 #define SERVO_MOTOR_FREQ            (50)
 #define SERVO_MOTOR_DUTY(x)         ((float)PWM_DUTY_MAX/(1000.0/(float)SERVO_MOTOR_FREQ)*(0.27+(float)(x)/90.0))
 #define SERVO_MOTOR_MID             (80)

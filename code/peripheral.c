@@ -56,8 +56,8 @@ void Key_Init(void)
     gpio_init(KEY3, GPI, GPIO_HIGH, GPI_PULL_UP);           
     gpio_init(KEY4, GPI, GPIO_HIGH, GPI_PULL_UP);           
 
-    gpio_init(SWITCH1, GPI, GPIO_HIGH, GPI_FLOATING_IN);    
-    gpio_init(SWITCH2, GPI, GPIO_HIGH, GPI_FLOATING_IN);    
+    gpio_init(SWITCH1, GPI, GPIO_HIGH, GPI_FLOATING_IN);
+    // SWITCH2/P33_12 is reserved for TLD7002 UART1 TX. Do not configure it as a switch input.
 
 }
 
