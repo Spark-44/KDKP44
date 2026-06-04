@@ -18,13 +18,6 @@ float kd;
 #define FLASH_FINAL_DSTS_MIN             (0.3f)
 #define FLASH_FINAL_DSTS_MAX             (20.0f)
 
-static int16 flash_clamp_route_length(int16 length)
-{
-    if(length < 0) return 0;
-    if(length > MAX_LENGTH_INDEX) return MAX_LENGTH_INDEX;
-    return length;
-}
-
 static float flash_sanitize_float(float value, float fallback, float min_value, float max_value)
 {
     if(!(value >= min_value && value <= max_value))
@@ -119,9 +112,6 @@ void Flash_Store_Mode(uint8 route_choice)
 {
     switch(route_choice)
     {
-        case 0:
-            Key_Recode_Point(&INS); Flash_Write_INSpoints();
-            break;
         case 1:
             if(portion2_points_build()){ Key_Recode_Point(&passage); Flash_Write_passage_points();}
             break;
@@ -130,7 +120,6 @@ void Flash_Store_Mode(uint8 route_choice)
             if(portion3_points_switch()){  Flash_Write_portion_3points();}
             break;
         default :break;
-        if(GPS_WORK_FLAG)Flash_Write_gpscheak();
     }
 
 }
@@ -138,10 +127,8 @@ void Flash_Store_Mode(uint8 route_choice)
 void Flash_Main_Read(void)
 {
     Flash_Read_pid();
-    Flash_Read_INSpoints();
     Flash_Read_passage_points();
     Flash_Read_portion_3points();
-    Flash_Read_gpscheak();
 
 }
 
@@ -275,125 +262,3 @@ void Flash_Read_portion_3points(void)
         }
     }
 }
-
-void Flash_Write_INSpoints(void)
-{
-
-    int16 route_length = flash_clamp_route_length(INS.length_index);
-    int16 stop_length = flash_clamp_route_length(daoche_point_length);
-    if(stop_length > route_length) stop_length = route_length;
-    int16 gps_length = INS.gps_recode_length;
-    if(gps_length < 0) gps_length = 0;
-    if(gps_length > MAX_GPS_RECODE) gps_length = MAX_GPS_RECODE;
-
-    INS.length_index = route_length;
-    daoche_point_length = stop_length;
-    INS.gps_recode_length = gps_length;
-
-    int max_storage = 2 * route_length +2 ;
-    int gps_max_storage = max_storage + gps_length*2 + 2 ;
-    flash_buffer_clear();
-
-    flash_union_buffer[0].int16_type = route_length;
-    if(daoche_flash_cheack)flash_union_buffer[1].int16_type = stop_length;
-    else{flash_union_buffer[1].int16_type = route_length;}
-    for(int i = 2 , j = 0;i < max_storage ; i += 2 , j++)
-    {
-        flash_union_buffer[i].float_type = INS.recode_map[j].x;
-    }
-    for(int i = 3 , j = 0;i < max_storage ; i += 2 , j++)
-    {
-        flash_union_buffer[i].float_type = INS.recode_map[j].y;
-    }
-    flash_union_buffer[max_storage].int16_type = gps_length;
-    for(int i = max_storage+2 , j = 0; i < gps_max_storage ; i+=2 , j++)
-    {
-        flash_union_buffer[i].int32_type = double_to_int32(INS.recode_gpsmap[j].lat);
-    }
-    for(int i = max_storage+3 , j = 0; i < gps_max_storage ; i+=2 , j++)
-    {
-        flash_union_buffer[i].int32_type = double_to_int32(INS.recode_gpsmap[j].lon);
-    }
-
-    if(flash_check(FLASH_SECTION_INDEX,RECODE_MAP_POINTS_INDEX))
-    {
-        flash_erase_page(FLASH_SECTION_INDEX,RECODE_MAP_POINTS_INDEX) ;
-    }
-    flash_write_page_from_buffer(FLASH_SECTION_INDEX,RECODE_MAP_POINTS_INDEX);
-
-}
-
-void Flash_Read_INSpoints(void)
-{
-    int get_max_storage = 0;
-    if(flash_check(FLASH_SECTION_INDEX,RECODE_MAP_POINTS_INDEX))
-    {
-        flash_buffer_clear();
-        flash_read_page_to_buffer(FLASH_SECTION_INDEX, RECODE_MAP_POINTS_INDEX);
-        INS.length_index = flash_clamp_route_length(flash_union_buffer[0].int16_type);
-        daoche_point_length = flash_clamp_route_length(flash_union_buffer[1].int16_type);
-        if(daoche_point_length > INS.length_index) daoche_point_length = INS.length_index;
-        get_max_storage =2 * INS.length_index +2;
-        for(int i = 2 , j = 0;i < get_max_storage ; i += 2 , j++)
-        {
-            INS.recode_map[j].x = flash_union_buffer[i].float_type;
-        }
-        for(int i = 3 , j = 0;i < get_max_storage ; i += 2 , j++)
-        {
-            INS.recode_map[j].y = flash_union_buffer[i].float_type;
-        }
-        INS.gps_recode_length = flash_union_buffer[get_max_storage].int16_type;
-        if(INS.gps_recode_length >MAX_GPS_RECODE)INS.gps_recode_length = MAX_GPS_RECODE;
-        int gps_max_storage = get_max_storage +INS.gps_recode_length*2 + 2 ;
-        for(int i = get_max_storage+2 , j = 0; i < gps_max_storage ; i+=2 , j++)
-        {
-            INS.recode_gpsmap[j].lat = int32_to_double(flash_union_buffer[i].int32_type);
-        }
-        for(int i = get_max_storage+3 , j = 0; i < gps_max_storage ; i+=2 , j++)
-        {
-            INS.recode_gpsmap[j].lon = int32_to_double(flash_union_buffer[i].int32_type);
-        }
-    }
-
-}
-
-void Flash_Read_gpscheak(void)
-{
-    if(flash_check(FLASH_SECTION_INDEX,GPS_CHEAK_FLAG))
-    {
-        flash_buffer_clear();
-        flash_read_page_to_buffer(FLASH_SECTION_INDEX, GPS_CHEAK_FLAG);
-        for(int i = 0 ; i < MAX_GPS_RECODE ; i++)
-        {
-            INS.recode_gpsmap[i].cheak_flag = flash_union_buffer[i].int16_type;
-        }
-        for(int i = MAX_GPS_RECODE , j = 1; i < MAX_GPS_RECODE*3/2 ; i++ , j+=2)
-        {
-            INS.recode_gpsmap[j].theta =flash_union_buffer[i].float_type ;
-        }
-
-    }
-
-}
-
-void Flash_Write_gpscheak(void)
-{
-    flash_buffer_clear();
-
-    for(int i = 0 ; i < MAX_GPS_RECODE ; i++)
-    {
-        flash_union_buffer[i].int16_type = INS.recode_gpsmap[i].cheak_flag;
-    }
-    for(int i = MAX_GPS_RECODE , j = 1; i < MAX_GPS_RECODE*3/2 ; i++ , j+=2)
-    {
-        flash_union_buffer[i].float_type = INS.recode_gpsmap[j].theta;
-    }
-
-    if(flash_check(FLASH_SECTION_INDEX,GPS_CHEAK_FLAG))
-    {
-        flash_erase_page(FLASH_SECTION_INDEX,GPS_CHEAK_FLAG) ;
-    }
-    flash_write_page_from_buffer(FLASH_SECTION_INDEX,GPS_CHEAK_FLAG);
-
-}
-

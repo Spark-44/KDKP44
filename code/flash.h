@@ -11,26 +11,16 @@ extern float kd ;
 
 #define FLASH_SECTION_INDEX             (0)
 #define SPEED_PID_PAGE_INDEX            (11)
-#define RECODE_MAP_POINTS_INDEX         (10)
 #define RECODE_PASSAGE                  (9)   
 #define RECODE_PASSAGE_TWO                  (8)   
 #define RECODE_PASSAGE_THREE                  (7)   
 #define RECODE_PASSAGE_FOUR                  (6)   
 #define RECODE_PASSAGE_FIF                  (5)   
 #define RECODE_PORTION_THREE                  (4)   
-#define GPS_CHEAK_FLAG                            (3)   
-
-void Flash_Read_gpscheak(void);
-
-void Flash_Write_gpscheak(void);
 
 void Flash_Read_pid(void);
 
 void Flash_Write_pid(void);
-
-void Flash_Write_INSpoints(void);
-
-void Flash_Read_INSpoints(void);
 
 void Flash_Write_passage_points(void);
 

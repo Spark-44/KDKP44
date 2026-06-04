@@ -42,7 +42,6 @@ void Menu_Parameter(void);
 void Menu_2Value(void);
 void Menu_Control_Value(void);
 void Menu_Mode_Choice(void);
-void Menu_Recode_Points(void);
 void GPS_prompt(void);
 void Menu_Show_Route(void);
 void Show_Route(void);
