@@ -371,10 +371,7 @@ void dot_matrix_screen_set_brightness (uint16 brightness)
 //-------------------------------------------------------------------------------------------------------------------
 void dot_matrix_screen_init (void)
 {
-    
-    tld7002_init();
-
-    exti_init(DOT_MATRIX_SCREEN_SYNC_PIN, EXTI_TRIGGER_FALLING);
+    uint8 i;
 
     gpio_init(dot_matrix_screen_row_pin[0], GPO, 0, GPO_PUSH_PULL);
     gpio_init(dot_matrix_screen_row_pin[1], GPO, 0, GPO_PUSH_PULL);
@@ -392,8 +389,14 @@ void dot_matrix_screen_init (void)
     gpio_low(dot_matrix_screen_row_pin[5]);
     gpio_low(dot_matrix_screen_row_pin[6]);
 
-    
-    tld7002_duty[15] = 0;
+    tld7002_init();
+
+    exti_init(DOT_MATRIX_SCREEN_SYNC_PIN, EXTI_TRIGGER_FALLING);
+
+    for(i = 0; i < 16; i++)
+    {
+        tld7002_duty[i] = 0;
+    }
     tld7002_set_duty(1);
     system_delay_ms(10);
 
