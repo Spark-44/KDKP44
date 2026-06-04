@@ -110,7 +110,7 @@ static void Portion2_Aux_Start(uint8 mode)
 
     if(mode >= 1 && mode <= 6)
     {
-        dot_matrix_screen_set_brightness(0);
+        dot_matrix_screen_set_brightness(5000);
         dot_matrix_screen_show_led_pattern(portion2_aux_pattern_table[mode - 1]);
     }
 }

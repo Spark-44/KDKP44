@@ -362,8 +362,7 @@ void dot_matrix_screen_show_string (const char *str)
 //-------------------------------------------------------------------------------------------------------------------
 void dot_matrix_screen_set_brightness (uint16 brightness)
 {
-    (void)brightness;
-    dot_matrix_screen_brightness = 0;
+    dot_matrix_screen_brightness = brightness;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -401,7 +400,7 @@ void dot_matrix_screen_init (void)
     system_delay_ms(10);
 
     
-    dot_matrix_screen_set_brightness(0);
+    dot_matrix_screen_set_brightness(5000);
     dot_matrix_screen_data[0] = ' ';
     dot_matrix_screen_data[1] = ' ';
     dot_matrix_screen_data[2] = ' ';

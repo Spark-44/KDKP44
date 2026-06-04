@@ -3,6 +3,7 @@
 #include "isr_config.h"
 #include "isr.h"
 #include "rear_motor/rear_motor.h"
+#include "screen.h"
 
 IFX_INTERRUPT(cc60_pit_ch1_isr, 0, CCU6_0_CH1_ISR_PRIORITY)
 {
@@ -28,7 +29,7 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
                 break;
 
             case YAOKONG:
-                Steer_Moter_Contral(hot_rc_steer);
+                /* YAOKONG disabled: no steering action */
                 break;
 
             case GUANDAO:
@@ -53,7 +54,7 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
     }
 
     
-    if(conrtol_mode == RACK_TEST || conrtol_mode == GUANDAO || conrtol_mode == DAOCHE || conrtol_mode == YAOKONG)
+    if(conrtol_mode == RACK_TEST || conrtol_mode == GUANDAO || conrtol_mode == DAOCHE)
     {
         static uint8 rear_tick = 0;
         rear_tick++;
@@ -208,6 +209,13 @@ IFX_INTERRUPT(exti_ch3_ch7_isr, 0, EXTI_CH3_CH7_INT_PRIO)
         
 
     }
+
+    // Dot-matrix screen sync on ERU_CH7_REQ11_P20_9
+    if(exti_flag_get(ERU_CH7_REQ11_P20_9))
+    {
+        exti_flag_clear(ERU_CH7_REQ11_P20_9);
+        dot_matrix_screen_scan();
+    }
 }
 
 IFX_INTERRUPT(dma_ch6_isr, 0, DMA_INT_PRIO_1)
@@ -295,4 +303,3 @@ IFX_INTERRUPT(uart3_er_isr, 0, UART3_ER_INT_PRIO)
     interrupt_global_enable(0);                     
     IfxAsclin_Asc_isrError(&uart3_handle);
 }
-

@@ -1,4 +1,5 @@
 #include "screen.h"
+#include <stdio.h>
 
 #pragma section all "cpu0_dsram"
 
@@ -26,6 +27,23 @@ static uint8 frame_buf[FRAME_LEN];
 static uint8 frame_pos;
 
 static uint8 last_cmd_id = 0;   
+
+// Diagnostics state (steps 2-5)
+static uint32 ci_bytes_total = 0;
+static uint32 ci_valid_frames = 0;
+static uint32 ci_bad_tail = 0;
+static uint32 ci_bad_checksum = 0;
+static uint32 ci_bad_msg = 0;
+static uint32 ci_no_head = 0;
+static uint32 ci_last_stat_ms = 0;
+static uint32 ci_last_byte_ms = 0;
+static uint32 ci_last_idle_report_ms = 0;
+
+// Recent raw dump buffer (16 bytes)
+static uint8  raw_buf[16];
+static uint8  raw_len = 0;
+static uint8  raw_state = 0;      // 0: seeking 0x6B, 1: seeking 0x79, 2: found head
+static uint32 raw_last_ms = 0;
 
 #pragma section all restore
 
@@ -155,14 +173,14 @@ static void parse_byte(uint8 byte)
                 
                 if(frame_buf[7] != FRAME_TAIL)
                 {
-                    uart_write_string(DEBUG_UART_INDEX, "[ERR] Bad tail\r\n");
+                    ci_bad_tail++;
                     parse_state = STATE_IDLE;
                     break;
                 }
                 
                 if(frame_buf[3] != FRAME_MSG_RX)
                 {
-                    uart_write_string(DEBUG_UART_INDEX, "[ERR] Bad msg type\r\n");
+                    ci_bad_msg++;
                     parse_state = STATE_IDLE;
                     break;
                 }
@@ -175,7 +193,7 @@ static void parse_byte(uint8 byte)
                 }
                 if(chk != frame_buf[6])
                 {
-                    uart_write_string(DEBUG_UART_INDEX, "[ERR] Bad checksum\r\n");
+                    ci_bad_checksum++;
                     parse_state = STATE_IDLE;
                     break;
                 }
@@ -187,6 +205,7 @@ static void parse_byte(uint8 byte)
 
                 
                 ci1302_execute_cmd(cmd_id);
+                ci_valid_frames++;
 
                 parse_state = STATE_IDLE;
             }
@@ -207,17 +226,8 @@ void screen_init(void)
 
     gpio_init(P11_2, GPO, 1, GPO_PUSH_PULL);
 
-    system_delay_ms(100);
-    dot_matrix_screen_init();
-
-    
-    uart_write_string(DEBUG_UART_INDEX, "\r\n[DIAG] Self-test: DoubleFlash ON\r\n");
-    dot_matrix_screen_set_brightness(5000);
-    dot_matrix_screen_show_led_pattern(DOT_MATRIX_PATTERN_DOUBLE_FLASH);
-    system_delay_ms(3000);
-    dot_matrix_screen_set_brightness(0);
+    system_delay_ms(10);
     dot_matrix_screen_clear_pattern();
-    uart_write_string(DEBUG_UART_INDEX, "[DIAG] Self-test: OFF\r\n");
 
     uart_write_string(DEBUG_UART_INDEX, "===== CI1302 Screen Ready =====\r\n");
 }
@@ -227,18 +237,125 @@ void screen_init(void)
 //-------------------------------------------------------------------------------------------------------------------
 void screen_poll(void)
 {
-    uint32 count = fifo_used(&rx_fifo);
+    uint32 now = system_getval_ms();
+    uint32 count = 0;
+    // Read bytes from the debug ring buffer (UART0) as the CI1302 input source.
+    count = debug_read_ring_buffer(rx_tmp, sizeof(rx_tmp));
     if(count == 0)
     {
+        // Idle detection (step 5)
+        if(now - ci_last_byte_ms >= 5000 && now - ci_last_idle_report_ms >= 5000)
+        {
+            uart_write_string(DEBUG_UART_INDEX, "[CI1302-IDLE] no uart data for 5000ms\r\n");
+            ci_last_idle_report_ms = now;
+        }
         return;
     }
 
-    fifo_read_buffer(&rx_fifo, rx_tmp, &count, FIFO_READ_AND_CLEAN);
+    ci_bytes_total += count;
+    ci_last_byte_ms = now;
 
     uint32 i;
     for(i = 0; i < count; i++)
     {
-        parse_byte(rx_tmp[i]);
+        uint8 b = rx_tmp[i];
+
+        // Raw diagnostics state machine (step 2): collect non-head garbage and dump
+        if(raw_state == 0) // seeking 0x6B
+        {
+            if(b != FRAME_HEAD0)
+            {
+                raw_buf[raw_len < 16 ? raw_len++ : 15] = b;
+                if(raw_len >= 16)
+                {
+                    uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
+                    for(uint8 k = 0; k < raw_len; k++)
+                    {
+                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
+                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
+                        uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
+                        if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
+                    }
+                    raw_len = 0;
+                    ci_no_head++;
+                }
+            }
+            else
+            {
+                raw_state = 1; // saw 0x6B
+                raw_len = 0;
+            }
+            raw_last_ms = now;
+        }
+        else if(raw_state == 1) // seeking 0x79 after 0x6B
+        {
+            if(b == FRAME_HEAD1_RX)
+            {
+                raw_state = 2; // found potential frame start; stop raw dumping until next search
+                raw_len = 0;
+            }
+            else
+            {
+                // false head, treat previous as garbage chunk continue seeking
+                raw_buf[raw_len < 16 ? raw_len++ : 15] = b;
+                if(raw_len >= 16)
+                {
+                    uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
+                    for(uint8 k = 0; k < raw_len; k++)
+                    {
+                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
+                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
+                        uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
+                        if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
+                    }
+                    raw_len = 0;
+                    ci_no_head++;
+                }
+                raw_state = 0;
+            }
+            raw_last_ms = now;
+        }
+        else
+        {
+            // in-frame or after recognizing a head: no raw dump here
+        }
+
+        // Timeout dump for partial garbage before finding head (step 2)
+        if(raw_len > 0 && (now - raw_last_ms) >= 50 && raw_state == 0)
+        {
+            uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
+            for(uint8 k = 0; k < raw_len; k++)
+            {
+                uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
+                uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
+                uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
+                if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
+            }
+            raw_len = 0;
+            ci_no_head++;
+        }
+
+        // Normal parser (step 3 is handled by parser improving tolerance below)
+        parse_byte(b);
+    }
+
+    // Stats once per second (step 4)
+    if(now - ci_last_stat_ms >= 1000)
+    {
+        ci_last_stat_ms = now;
+        char line[160];
+        int len = sprintf(line,
+                          "[CI1302-STAT] bytes=%lu valid=%lu badEnd=%lu badChecksum=%lu badMsg=%lu noHead=%lu\r\n",
+                          (unsigned long)ci_bytes_total,
+                          (unsigned long)ci_valid_frames,
+                          (unsigned long)ci_bad_tail,
+                          (unsigned long)ci_bad_checksum,
+                          (unsigned long)ci_bad_msg,
+                          (unsigned long)ci_no_head);
+        if(len > 0)
+        {
+            uart_write_string(DEBUG_UART_INDEX, line);
+        }
     }
 }
 
