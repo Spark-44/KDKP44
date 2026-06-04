@@ -399,7 +399,8 @@ int core0_main(void)
     dot_matrix_screen_init();
     servo_init();
     
-   pit_ms_init(CCU61_CH0, 1);           
+   pit_ms_init(CCU61_CH0, 1);
+   pit_ms_init(CCU61_CH1, 1);
 
     cpu_wait_event_ready();                                                          
 
