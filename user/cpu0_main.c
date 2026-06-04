@@ -3,6 +3,7 @@
 #include "IfxScu_reg.h"
 #include "screen.h"
 #include "offline_voice.h"
+#include "buzzer_action.h"
 #include "rear_motor/rear_motor.h"
 #include <stdio.h>
 #pragma section all "cpu0_dsram"
@@ -252,6 +253,18 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
 
         case OFFLINE_VOICE_CMD_WIPER:
             Portion2_Aux_Start(8);
+            break;
+
+        case OFFLINE_VOICE_CMD_HORN_1S:
+        case OFFLINE_VOICE_CMD_HORN_2S:
+        case OFFLINE_VOICE_CMD_HORN_3S:
+        case OFFLINE_VOICE_CMD_HORN_2X:
+        case OFFLINE_VOICE_CMD_HORN_3X:
+        case OFFLINE_VOICE_CMD_HORN_4X:
+        case OFFLINE_VOICE_CMD_HORN_LONG_SHORT:
+        case OFFLINE_VOICE_CMD_HORN_RAPID:
+        case OFFLINE_VOICE_CMD_HORN_ALARM:
+            buzzer_action_from_voice_cmd(cmd_id);
             break;
 
         case OFFLINE_VOICE_CMD_GATE1_LEFT:
