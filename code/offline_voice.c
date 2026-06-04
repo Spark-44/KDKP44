@@ -7,8 +7,6 @@
 #define OFFLINE_VOICE_MSG_RX          (0x81)
 #define OFFLINE_VOICE_MSG_TX          (0x82)
 #define OFFLINE_VOICE_TAIL            (0xFB)
-#define OFFLINE_VOICE_RX_BUF_LEN      (64)
-
 typedef enum
 {
     OFFLINE_VOICE_STATE_IDLE = 0,
@@ -20,7 +18,6 @@ typedef enum
 static offline_voice_parse_state_t offline_voice_parse_state = OFFLINE_VOICE_STATE_IDLE;
 static uint8 offline_voice_frame_buf[OFFLINE_VOICE_FRAME_LEN];
 static uint8 offline_voice_frame_pos = 0;
-static uint8 offline_voice_rx_tmp[OFFLINE_VOICE_RX_BUF_LEN];
 static offline_voice_cmd_callback_t offline_voice_callback = 0;
 static void *offline_voice_user_data = 0;
 static offline_voice_stats_t offline_voice_stats = {0};
@@ -90,18 +87,29 @@ void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data)
     offline_voice_user_data = user_data;
     offline_voice_reset_stats();
     offline_voice_reset_parser();
+    uart_init(OFFLINE_VOICE_UART_INDEX,
+              OFFLINE_VOICE_UART_BAUD,
+              OFFLINE_VOICE_UART_TX_PIN,
+              OFFLINE_VOICE_UART_RX_PIN);
 }
 
 void offline_voice_poll(void)
 {
-    uint32 count;
-    uint32 i;
+    uint8 data;
 
-    count = debug_read_ring_buffer(offline_voice_rx_tmp, OFFLINE_VOICE_RX_BUF_LEN);
-
-    for(i = 0; i < count; i++)
+    while(uart_query_byte(OFFLINE_VOICE_UART_INDEX, &data))
     {
-        offline_voice_feed_byte(offline_voice_rx_tmp[i]);
+        offline_voice_feed_byte(data);
+    }
+}
+
+void offline_voice_uart_rx_handler(void)
+{
+    uint8 data;
+
+    while(uart_query_byte(OFFLINE_VOICE_UART_INDEX, &data))
+    {
+        offline_voice_feed_byte(data);
     }
 }
 
@@ -169,7 +177,7 @@ void offline_voice_send_response(uint8 cmd_id)
 
     for(i = 0; i < OFFLINE_VOICE_FRAME_LEN; i++)
     {
-        uart_write_byte(DEBUG_UART_INDEX, response[i]);
+        uart_write_byte(OFFLINE_VOICE_UART_INDEX, response[i]);
     }
 }
 

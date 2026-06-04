@@ -57,6 +57,11 @@
 
 #define OFFLINE_VOICE_CMD_MAX                  (0x2C)
 
+#define OFFLINE_VOICE_UART_INDEX               (UART_2)
+#define OFFLINE_VOICE_UART_BAUD                (115200)
+#define OFFLINE_VOICE_UART_TX_PIN              (UART2_TX_P10_5)
+#define OFFLINE_VOICE_UART_RX_PIN              (UART2_RX_P10_6)
+
 typedef void (*offline_voice_cmd_callback_t)(uint8 cmd_id, void *user_data);
 
 typedef struct
@@ -72,6 +77,7 @@ typedef struct
 void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data);
 void offline_voice_poll(void);
 void offline_voice_feed_byte(uint8 byte);
+void offline_voice_uart_rx_handler(void);
 void offline_voice_send_response(uint8 cmd_id);
 void offline_voice_reset_stats(void);
 uint8 offline_voice_get_last_cmd(void);

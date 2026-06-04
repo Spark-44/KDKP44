@@ -4,6 +4,7 @@
 #include "isr.h"
 #include "rear_motor/rear_motor.h"
 #include "screen.h"
+#include "offline_voice.h"
 
 IFX_INTERRUPT(cc60_pit_ch1_isr, 0, CCU6_0_CH1_ISR_PRIORITY)
 {
@@ -265,7 +266,7 @@ IFX_INTERRUPT(uart2_tx_isr, 0, UART2_TX_INT_PRIO)
 IFX_INTERRUPT(uart2_rx_isr, 0, UART2_RX_INT_PRIO)
 {
     interrupt_global_enable(0);                     
-    wireless_module_uart_handler();                 
+    offline_voice_uart_rx_handler();
 
 }
 

@@ -303,7 +303,7 @@ void recode_waypoint(guandao_state * state)
 
     static uint8 dche_flag = 1;
     if(state->length_index >= MAX_LENGTH_INDEX)return;
-    if(state == &INS && (key1_flag == 1|| x6f_out[3] ==200) && dche_flag ==1)  
+    if(state == &INS && key1_flag == 1 && dche_flag ==1)
     {
         key1_flag =0;
         dche_flag =0;
@@ -732,10 +732,6 @@ void guandao_recode(guandao_state * state)
 
     if(GPS_WORK_FLAG){if(key2_flag == 1){ key2_flag = 0 ; recode_gps(p);  }}        
 //     guandao_show();
-
-    if((x6f_out[2] == 200)&&flag1){   Flash_Store_Mode(route_setting_choice);  Buzzer_check(50);  flag1 = 0; };    
-    
-
 }
 
 uint8 portion2_points_build(void)

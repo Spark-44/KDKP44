@@ -105,7 +105,6 @@
 #include "zf_device_tft180.h"
 #include "zf_device_tsl1401.h"
 #include "zf_device_type.h"
-#include "zf_device_uart_receiver.h"
 #include "zf_device_virtual_oscilloscope.h"
 #include "zf_device_wifi_uart.h"
 #include "zf_device_wifi_spi.h"
@@ -132,7 +131,6 @@
 #include "IMU_2.h"
 #include "IMU.h"
 
-#include "RemteControl.h"
 
 #include "guandao.h"
 #include "gps.h"

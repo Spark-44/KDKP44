@@ -380,25 +380,11 @@ static void Portion2_Serial_Command_Update(void)
     uint8 data;
     uint8 buffer[64];
     uint32 len = debug_read_ring_buffer(buffer, sizeof(buffer));
-    static uint8 voice_frame_remaining = 0;
 
     for(uint32 i = 0; i < len; i++)
     {
         data = buffer[i];
-        if(voice_frame_remaining > 0)
-        {
-            offline_voice_feed_byte(data);
-            voice_frame_remaining--;
-        }
-        else if(data == 0x6B)
-        {
-            offline_voice_feed_byte(data);
-            voice_frame_remaining = 7;
-        }
-        else
-        {
-            Portion2_Ascii_Command_Execute(data);
-        }
+        Portion2_Ascii_Command_Execute(data);
     }
 }
 
@@ -412,7 +398,6 @@ int core0_main(void)
     rear_motor_init();                  
     dot_matrix_screen_init();
     servo_init();
-    // uart_receiver_init();               // SBUS disabled: free UART2 for voice module
     
    pit_ms_init(CCU61_CH0, 1);           
 
@@ -445,6 +430,7 @@ int core0_main(void)
                 break;
 
             case Guandao_Voice:                                             
+                offline_voice_poll();
                 Portion2_Serial_Command_Update();
                 Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
@@ -479,20 +465,7 @@ int core0_main(void)
         Guandao_Rear_Motor_Update();
 
             
-            if(main_mode == YaoKong_Mode)
-            {
-                ips200_show_string(X(1),  Y(8), "RC");
-                ips200_show_string(X(1),  Y(9), "State");    ips200_show_int(X(8),  Y(9), uart_receiver.state, 2);
-                ips200_show_string(X(1),  Y(10), "C1");      ips200_show_int(X(5),  Y(10), uart_receiver.channel[0], 4);
-                ips200_show_string(X(11), Y(10), "C2");      ips200_show_int(X(15), Y(10), uart_receiver.channel[1], 4);
-                ips200_show_string(X(1),  Y(11), "C3");      ips200_show_int(X(5),  Y(11), uart_receiver.channel[2], 4);
-                ips200_show_string(X(11), Y(11), "C4");      ips200_show_int(X(15), Y(11), uart_receiver.channel[3], 4);
-                ips200_show_string(X(1),  Y(12), "C5");      ips200_show_int(X(5),  Y(12), uart_receiver.channel[4], 4);
-                ips200_show_string(X(11), Y(12), "C6");      ips200_show_int(X(15), Y(12), uart_receiver.channel[5], 4);
-                ips200_show_string(X(1),  Y(13), "Steer");   ips200_show_float(X(8),  Y(13), hot_rc_steer, 3, 1);
-                ips200_show_string(X(1),  Y(14), "Speed");   ips200_show_float(X(8),  Y(14), hot_rc_speed, 2, 1);
-            }
-            else if(main_mode == Guandao_portion_3)
+            if(main_mode == Guandao_portion_3)
             {
                 static uint32 last_ui_ms = 0;
                 uint32 now_ui_ms = system_getval_ms();
@@ -515,14 +488,6 @@ int core0_main(void)
 //                    ips200_show_float(X(10),  Y(12),angle_speed ,5 ,5);
 //                    VeerMoter_Set(10000);
 
-//        hotRc_Show();
-        if(0 && main_mode != Rack_Test_Mode && x6f_out[4] ==200)                                          
-        {
-            conrtol_mode =IDLE;
-            Moter_Set(0 , 0 );
-            VeerMoter_Set(0);
-
-        }
 //        if(key1_flag ==1)
 //        {
 //            key1_flag=0;
