@@ -58,7 +58,7 @@
 #define OFFLINE_VOICE_CMD_MAX                  (0x2C)
 
 #define OFFLINE_VOICE_UART_INDEX               (UART_2)
-#define OFFLINE_VOICE_UART_BAUD                (115200)
+#define OFFLINE_VOICE_UART_BAUD                (9600)
 #define OFFLINE_VOICE_UART_TX_PIN              (UART2_TX_P10_5)
 #define OFFLINE_VOICE_UART_RX_PIN              (UART2_RX_P10_6)
 

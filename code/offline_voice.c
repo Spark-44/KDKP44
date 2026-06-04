@@ -129,7 +129,7 @@ void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data)
               OFFLINE_VOICE_UART_TX_PIN,
               OFFLINE_VOICE_UART_RX_PIN);
     uart_rx_interrupt(OFFLINE_VOICE_UART_INDEX, 1);
-    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART2] init 115200 TX=P10.5 RX=P10.6\r\n");
+    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART2] init 9600 TX=P10.5 RX=P10.6\r\n");
 }
 
 void offline_voice_poll(void)
