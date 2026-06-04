@@ -115,26 +115,36 @@ void Buzzer_Init(void)
     gpio_init(BUZZER_PIN, GPO, 0, GPO_PUSH_PULL);
 }
 
-#define PASSIVE_BUZZER_HALF_PERIOD_US  (250u)   // 2kHz square wave for passive buzzer
-
-void Buzzer_check(int time2)
+void Buzzer_tone(int time_ms, uint16 freq_hz)
 {
     uint32 toggle_count = 0;
+    uint32 half_period_us = 0;
     uint32 i = 0;
 
-    if(time2 <= 0)
+    if(time_ms <= 0 || freq_hz == 0u)
     {
         gpio_set_level(BUZZER_PIN,0);
         return;
     }
 
-    toggle_count = ((uint32)time2 * 1000u) / PASSIVE_BUZZER_HALF_PERIOD_US;
+    half_period_us = 500000u / (uint32)freq_hz;
+    if(half_period_us == 0u)
+    {
+        half_period_us = 1u;
+    }
+
+    toggle_count = ((uint32)time_ms * 1000u) / half_period_us;
     for(i = 0; i < toggle_count; i++)
     {
         gpio_toggle_level(BUZZER_PIN);
-        system_delay_us(PASSIVE_BUZZER_HALF_PERIOD_US);
+        system_delay_us(half_period_us);
     }
     gpio_set_level(BUZZER_PIN,0);
+}
+
+void Buzzer_check(int time2)
+{
+    Buzzer_tone(time2, 2000u);
 }
 
 void Steer_init(void)

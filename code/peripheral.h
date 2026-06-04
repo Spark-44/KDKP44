@@ -75,6 +75,7 @@ void Key_Init(void);
 void Key_Scan(void);
 void Buzzer_Init(void);
 void Buzzer_check(int time2);
+void Buzzer_tone(int time_ms, uint16 freq_hz);
 void Steer_init(void);
 void Steer_set(int angle);
 void Steer_text(void);
