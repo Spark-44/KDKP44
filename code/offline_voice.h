@@ -48,7 +48,14 @@
 #define OFFLINE_VOICE_CMD_TURN_LEFT_DRIVE      (0x25)
 #define OFFLINE_VOICE_CMD_TURN_RIGHT_DRIVE     (0x26)
 
-#define OFFLINE_VOICE_CMD_MAX                  (0x26)
+#define OFFLINE_VOICE_CMD_ROUTE_ARRIVE_CHANGE  (0x27)
+#define OFFLINE_VOICE_CMD_ROUTE_START_CHANGE   (0x28)
+#define OFFLINE_VOICE_CMD_ROUTE_STRAIGHT       (0x29)
+#define OFFLINE_VOICE_CMD_ROUTE_SNAKE          (0x2A)
+#define OFFLINE_VOICE_CMD_BACK_STRAIGHT        (0x2B)
+#define OFFLINE_VOICE_CMD_BACK_SNAKE           (0x2C)
+
+#define OFFLINE_VOICE_CMD_MAX                  (0x2C)
 
 typedef void (*offline_voice_cmd_callback_t)(uint8 cmd_id, void *user_data);
 

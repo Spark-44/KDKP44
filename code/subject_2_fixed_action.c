@@ -4,6 +4,9 @@
 
 #define SUBJECT_2_FIXED_GUANDAO_SPEED_TO_MPS (0.1f)
 #define SUBJECT_2_FIXED_TURN_SPEED_MPS     (0.35f)
+#define SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M (10.0f)
+#define SUBJECT_2_FIXED_SNAKE_DISTANCE_M    (10.0f)
+#define SUBJECT_2_FIXED_SNAKE_PERIOD_MS     (1000U)
 #define SUBJECT_2_FIXED_TURN_ANGLE_DEG     (90.0f)
 #define SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG   (360.0f)
 #define SUBJECT_2_FIXED_STEER_DEG          (25.0f)
@@ -38,6 +41,10 @@ typedef struct
 
 static const subject_2_fixed_action_t subject_2_fixed_actions[] =
 {
+    {VOICE_DRIVE_ACTION_FORWARD_10M,        SUBJECT_2_FIXED_TURN_SPEED_MPS,  0.0f,                         SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M, SUBJECT_2_FIXED_STOP_DISTANCE},
+    {VOICE_DRIVE_ACTION_BACKWARD_10M,      -SUBJECT_2_FIXED_TURN_SPEED_MPS,  0.0f,                         SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M, SUBJECT_2_FIXED_STOP_DISTANCE},
+    {VOICE_DRIVE_ACTION_SNAKE_FORWARD_10M,  SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,    SUBJECT_2_FIXED_SNAKE_DISTANCE_M,    SUBJECT_2_FIXED_STOP_DISTANCE},
+    {VOICE_DRIVE_ACTION_SNAKE_BACKWARD_10M,-SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,    SUBJECT_2_FIXED_SNAKE_DISTANCE_M,    SUBJECT_2_FIXED_STOP_DISTANCE},
     {VOICE_DRIVE_ACTION_CCW_CIRCLE,          SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
     {VOICE_DRIVE_ACTION_CW_CIRCLE,           SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
     {VOICE_DRIVE_ACTION_TURN_LEFT,           SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW},
@@ -114,6 +121,14 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
 
     output->speed_mps = action->speed_mps;
     output->steer_deg = action->steer_deg;
+
+    if(mode == VOICE_DRIVE_ACTION_SNAKE_FORWARD_10M || mode == VOICE_DRIVE_ACTION_SNAKE_BACKWARD_10M)
+    {
+        if(((elapsed_ms / SUBJECT_2_FIXED_SNAKE_PERIOD_MS) % 2U) != 0U)
+        {
+            output->steer_deg = -action->steer_deg;
+        }
+    }
 
     if(action->stop_type == SUBJECT_2_FIXED_STOP_DISTANCE && distance_m >= action->stop_value)
     {
@@ -192,13 +207,6 @@ void voice_drive_action_task(void)
     {
         voice_drive_action_stop();
     }
-
-    ips200_show_string(X(1), Y(8), "VACT");
-    ips200_show_int(X(7), Y(8), subject_2_fixed_action_state.mode, 2);
-    ips200_show_string(X(1), Y(9), "Dist");
-    ips200_show_float(X(7), Y(9), subject_2_fixed_action_state.distance_m, 3, 2);
-    ips200_show_string(X(1), Y(10), "YawD");
-    ips200_show_float(X(7), Y(10), subject_2_fixed_action_state.yaw_delta, 4, 1);
 }
 
 uint8 voice_drive_action_get_mode(void)

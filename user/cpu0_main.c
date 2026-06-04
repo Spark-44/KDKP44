@@ -2,6 +2,7 @@
 #include "zf_common_headfile.h"
 #include "IfxScu_reg.h"
 #include "screen.h"
+#include "offline_voice.h"
 #include "rear_motor/rear_motor.h"
 #include <stdio.h>
 #pragma section all "cpu0_dsram"
@@ -132,92 +133,246 @@ static void Portion2_Aux_Task(void)
     }
 }
 
+static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
+{
+    portion2_run_stop();
+    voice_drive_action_start(mode);
+}
+
+static void Portion2_Ascii_Command_Execute(uint8 data)
+{
+    static uint8 reverse_route_pending = 0;
+
+    if(data == '-')
+    {
+        reverse_route_pending = 1;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+    }
+    else if(data >= '1' && data <= '9')
+    {
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        voice_drive_action_stop();
+        if(reverse_route_pending && data >= '1' && data <= '5')
+        {
+            portion2_run_select_reverse_route(data - '1');
+        }
+        else if(reverse_route_pending && (data == '8' || data == '9'))
+        {
+            portion2_run_select_back_route(data - '1');
+        }
+        else
+        {
+            portion2_run_select_route(data - '1');
+        }
+        reverse_route_pending = 0;
+    }
+    else if(data >= 'A' && data <= 'H')
+    {
+        reverse_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+
+        if(data >= 'A' && data <= 'F')
+        {
+            Portion2_Aux_Start(data - 'A' + 1);
+        }
+        else if(data == 'H')
+        {
+            Portion2_Aux_Start(8);
+        }
+    }
+    else if(data >= 'a' && data <= 'h')
+    {
+        reverse_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+
+        if(data >= 'a' && data <= 'f')
+        {
+            Portion2_Aux_Start(data - 'a' + 1);
+        }
+        else if(data == 'h')
+        {
+            Portion2_Aux_Start(8);
+        }
+    }
+    else if(data >= 'I' && data <= 'P')
+    {
+        reverse_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'I')));
+    }
+    else if(data >= 'i' && data <= 'p')
+    {
+        reverse_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'i')));
+    }
+}
+
+static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
+{
+    (void)user_data;
+
+    switch(cmd_id)
+    {
+        case OFFLINE_VOICE_CMD_DOUBLE_FLASH:
+            Portion2_Aux_Start(1);
+            break;
+
+        case OFFLINE_VOICE_CMD_TURN_LEFT:
+            Portion2_Aux_Start(2);
+            break;
+
+        case OFFLINE_VOICE_CMD_TURN_RIGHT:
+            Portion2_Aux_Start(3);
+            break;
+
+        case OFFLINE_VOICE_CMD_LOW_BEAM:
+            Portion2_Aux_Start(4);
+            break;
+
+        case OFFLINE_VOICE_CMD_HIGH_BEAM:
+            Portion2_Aux_Start(5);
+            break;
+
+        case OFFLINE_VOICE_CMD_FOG_LIGHT:
+            Portion2_Aux_Start(6);
+            break;
+
+        case OFFLINE_VOICE_CMD_WIPER:
+            Portion2_Aux_Start(8);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE1_LEFT:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_1);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE1:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_2);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE2:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_3);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE3:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_4);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE3_RIGHT:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_5);
+            break;
+
+        case OFFLINE_VOICE_CMD_ROUTE_ARRIVE_CHANGE:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_ARRIVE_DIR_CHANGE);
+            break;
+
+        case OFFLINE_VOICE_CMD_ROUTE_START_CHANGE:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_START_DIR_CHANGE);
+            break;
+
+        case OFFLINE_VOICE_CMD_ROUTE_STRAIGHT:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
+            break;
+
+        case OFFLINE_VOICE_CMD_ROUTE_SNAKE:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_SNAKE);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE1_RIGHT_BACK:
+            voice_drive_action_stop();
+            portion2_run_select_reverse_route(PORTION2_ROUTE_1);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE1_BACK:
+            voice_drive_action_stop();
+            portion2_run_select_reverse_route(PORTION2_ROUTE_2);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE2_BACK:
+            voice_drive_action_stop();
+            portion2_run_select_reverse_route(PORTION2_ROUTE_3);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE3_BACK:
+            voice_drive_action_stop();
+            portion2_run_select_reverse_route(PORTION2_ROUTE_4);
+            break;
+
+        case OFFLINE_VOICE_CMD_GATE3_LEFT_BACK:
+            voice_drive_action_stop();
+            portion2_run_select_reverse_route(PORTION2_ROUTE_5);
+            break;
+
+        case OFFLINE_VOICE_CMD_BACK_STRAIGHT:
+            voice_drive_action_stop();
+            portion2_run_select_back_route(PORTION2_ROUTE_STRAIGHT);
+            break;
+
+        case OFFLINE_VOICE_CMD_BACK_SNAKE:
+            voice_drive_action_stop();
+            portion2_run_select_back_route(PORTION2_ROUTE_SNAKE);
+            break;
+
+        case OFFLINE_VOICE_CMD_FORWARD_10M:
+        case OFFLINE_VOICE_CMD_BACKWARD_10M:
+        case OFFLINE_VOICE_CMD_SNAKE_FORWARD:
+        case OFFLINE_VOICE_CMD_SNAKE_BACKWARD:
+        case OFFLINE_VOICE_CMD_CCW_CIRCLE:
+        case OFFLINE_VOICE_CMD_CW_CIRCLE:
+        case OFFLINE_VOICE_CMD_TURN_LEFT_DRIVE:
+        case OFFLINE_VOICE_CMD_TURN_RIGHT_DRIVE:
+            Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (cmd_id - OFFLINE_VOICE_CMD_FORWARD_10M)));
+            break;
+
+        default:
+            break;
+    }
+}
+
 static void Portion2_Serial_Command_Update(void)
 {
-    uint8 data = 0;
-    uint8 buffer[8];
-    uint32 len = debug_read_ring_buffer(buffer, 8);
-    static uint8 reverse_route_pending = 0;
+    uint8 data;
+    uint8 buffer[64];
+    uint32 len = debug_read_ring_buffer(buffer, sizeof(buffer));
+    static uint8 voice_frame_remaining = 0;
 
     for(uint32 i = 0; i < len; i++)
     {
         data = buffer[i];
-        if(data == '-')
+        if(voice_frame_remaining > 0)
         {
-            reverse_route_pending = 1;
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
+            offline_voice_feed_byte(data);
+            voice_frame_remaining--;
         }
-        else if(data >= '1' && data <= '9')
+        else if(data == 0x6B)
         {
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
-            voice_drive_action_stop();
-            if(reverse_route_pending && data >= '1' && data <= '5')
-            {
-                portion2_run_select_reverse_route(data - '1');
-            }
-            else if(reverse_route_pending && (data == '8' || data == '9'))
-            {
-                portion2_run_select_back_route(data - '1');
-            }
-            else
-            {
-                portion2_run_select_route(data - '1');
-            }
-            reverse_route_pending = 0;
+            offline_voice_feed_byte(data);
+            voice_frame_remaining = 7;
         }
-        else if(data >= 'A' && data <= 'H')
+        else
         {
-            reverse_route_pending = 0;
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
-
-            if(data >= 'A' && data <= 'F')
-            {
-                Portion2_Aux_Start(data - 'A' + 1);
-            }
-            else if(data == 'H')
-            {
-                Portion2_Aux_Start(8);
-            }
-        }
-        else if(data >= 'a' && data <= 'h')
-        {
-            reverse_route_pending = 0;
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
-
-            if(data >= 'a' && data <= 'f')
-            {
-                Portion2_Aux_Start(data - 'a' + 1);
-            }
-            else if(data == 'h')
-            {
-                Portion2_Aux_Start(8);
-            }
-        }
-        else if(data >= 'M' && data <= 'P')
-        {
-            reverse_route_pending = 0;
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
-            portion2_run_stop();
-            voice_drive_action_start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'I')));
-        }
-        else if(data >= 'm' && data <= 'p')
-        {
-            reverse_route_pending = 0;
-            portion2_run_last_rx = data;
-            portion2_run_rx_count++;
-            uart_write_byte(DEBUG_UART_INDEX, data);
-            portion2_run_stop();
-            voice_drive_action_start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'i')));
+            Portion2_Ascii_Command_Execute(data);
         }
     }
 }
@@ -245,6 +400,7 @@ int core0_main(void)
     if(main_mode == Guandao_Voice)
     {
         screen_init();
+        offline_voice_init(Portion2_Voice_Command_Handle, 0);
     }
 
     Flash_Write_pid();                                                               
@@ -265,7 +421,6 @@ int core0_main(void)
 
             case Guandao_Voice:                                             
                 Portion2_Serial_Command_Update();
-                screen_poll();
                 Portion2_Aux_Task();
                 if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
                 {

@@ -98,7 +98,6 @@ void offline_voice_poll(void)
     uint32 i;
 
     count = debug_read_ring_buffer(offline_voice_rx_tmp, OFFLINE_VOICE_RX_BUF_LEN);
-    offline_voice_stats.bytes_total += count;
 
     for(i = 0; i < count; i++)
     {
@@ -108,6 +107,8 @@ void offline_voice_poll(void)
 
 void offline_voice_feed_byte(uint8 byte)
 {
+    offline_voice_stats.bytes_total++;
+
     switch(offline_voice_parse_state)
     {
         case OFFLINE_VOICE_STATE_IDLE:
