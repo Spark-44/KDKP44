@@ -264,8 +264,8 @@ int core0_main(void)
                 break;
 
             case Guandao_Voice:                                             
-                screen_poll();
                 Portion2_Serial_Command_Update();
+                screen_poll();
                 Portion2_Aux_Task();
                 if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
                 {

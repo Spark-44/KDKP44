@@ -178,12 +178,10 @@ void dot_matrix_screen_scan(void)
     {
         if(0 == display_row_now)
         {
-            
             gpio_low(dot_matrix_screen_row_pin[DOT_MATRIX_SCREEN_ROW_NUM - 1]);
         }
         else
         {
-            
             gpio_low(dot_matrix_screen_row_pin[display_row_now - 1]);
         }
 
@@ -364,7 +362,8 @@ void dot_matrix_screen_show_string (const char *str)
 //-------------------------------------------------------------------------------------------------------------------
 void dot_matrix_screen_set_brightness (uint16 brightness)
 {
-    dot_matrix_screen_brightness = brightness;
+    (void)brightness;
+    dot_matrix_screen_brightness = 0;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -385,13 +384,26 @@ void dot_matrix_screen_init (void)
     gpio_init(dot_matrix_screen_row_pin[5], GPO, 0, GPO_PUSH_PULL);
     gpio_init(dot_matrix_screen_row_pin[6], GPO, 0, GPO_PUSH_PULL);
 
+    gpio_low(dot_matrix_screen_row_pin[0]);
+    gpio_low(dot_matrix_screen_row_pin[1]);
+    gpio_low(dot_matrix_screen_row_pin[2]);
+    gpio_low(dot_matrix_screen_row_pin[3]);
+    gpio_low(dot_matrix_screen_row_pin[4]);
+    gpio_low(dot_matrix_screen_row_pin[5]);
+    gpio_low(dot_matrix_screen_row_pin[6]);
+
     
-    tld7002_duty[15] = 5000;
+    tld7002_duty[15] = 0;
     tld7002_set_duty(1);
     system_delay_ms(10);
 
     
-    dot_matrix_screen_set_brightness(dot_matrix_screen_brightness);
-    
+    dot_matrix_screen_set_brightness(0);
+    dot_matrix_screen_data[0] = ' ';
+    dot_matrix_screen_data[1] = ' ';
+    dot_matrix_screen_data[2] = ' ';
+    dot_matrix_screen_data_backup[0] = ' ';
+    dot_matrix_screen_data_backup[1] = ' ';
+    dot_matrix_screen_data_backup[2] = ' ';
     dot_matrix_screen_show_string("   ");
 }
