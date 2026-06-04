@@ -134,6 +134,18 @@ static void Portion2_Aux_Task(void)
     }
 }
 
+static void Portion2_Dot_Matrix_Scan_Update(void)
+{
+    static uint32 last_scan_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if((uint32)(now_ms - last_scan_ms) >= 1U)
+    {
+        last_scan_ms = now_ms;
+        dot_matrix_screen_scan();
+    }
+}
+
 static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
 {
     portion2_run_stop();
@@ -434,6 +446,7 @@ int core0_main(void)
 
             case Guandao_Voice:                                             
                 Portion2_Serial_Command_Update();
+                Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
                 if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
                 {
