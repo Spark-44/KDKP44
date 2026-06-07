@@ -1,6 +1,7 @@
 
 
 #include "zf_common_headfile.h"
+#include "display.h"
 #include "rear_motor/rear_motor.h"
 
 guandao_state INS;                               //0 = route_setting_choice
@@ -14,7 +15,7 @@ uint8 route_setting_choice = 0;
 
 float base_speed = 10.0f;
 float persuit_threshold = 0.4f;         
-float recode_threshold = 0.4f;         
+float recode_threshold = 0.2f;         
 int16 preview_spets = 2;                  
 float daoche_speed = -10.0;           
 float final_dsts = 3.0f;                     
@@ -34,7 +35,7 @@ uint16 portion2_run_rx_count = 0;
 uint8 portion2_run_reject_reason = 0;
 uint16 portion2_route_length[PORTION2_ROUTE_COUNT] = {0};
 uint8 portion2_route_gps_count[PORTION2_ROUTE_COUNT] = {0};
-const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {8, 8, 8, 8, 8, 8, 8, 8, 8};
+const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {5, 5, 5, 5, 5, 5, 5, 5, 5};
 static uint8 portion2_gps_auto_has_point[PORTION2_ROUTE_COUNT] = {0};
 static state_t portion2_gps_auto_last_state[PORTION2_ROUTE_COUNT];
 
@@ -44,11 +45,37 @@ uint8 daoche_flash_cheack =0;
 static uint8 portion1_state_flag = 0;
 static uint16 portion1_finally_length = 0;
 static uint8 portion2_state_flag = 0;
+static uint8 portion2_route_saved_flag[PORTION2_ROUTE_COUNT] = {0};
+static uint8 portion2_serial_trace_enabled = 0;
+static uint32 portion2_record_k1_start_ms = 0;
+static uint32 portion2_record_k2_start_ms = 0;
+static uint32 portion2_record_k3_start_ms = 0;
+static uint32 portion2_record_k4_start_ms = 0;
+static uint8 portion2_record_k1_wait_release = 0;
+static uint8 portion2_record_k2_wait_release = 0;
+static uint8 portion2_record_k3_wait_release = 0;
+static uint8 portion2_record_k4_wait_release = 0;
 
 #define GUANDAO_START_SEARCH_POINTS    10
 #define GUANDAO_TRACE_SEARCH_POINTS    8
 #define GUANDAO_FRONT_TARGET_ANGLE     100.0f
+#define GUANDAO_STEERING_GAIN          2.2f
+#define GUANDAO_STEERING_CMD_LIMIT     35.0f
+#define GUANDAO_CURVE_TRIGGER_ANGLE    35.0f
+#define GUANDAO_CURVE_SPEED_RATIO      0.70f
+#define GUANDAO_HIGH_SPEED_THRESHOLD   5.0f
+#define GUANDAO_HIGH_SPEED_GAIN        1.55f
+#define GUANDAO_HIGH_SPEED_CMD_LIMIT   32.0f
+#define GUANDAO_VERY_HIGH_SPEED_THRESHOLD 15.0f
+#define GUANDAO_VERY_HIGH_SPEED_GAIN   1.20f
+#define GUANDAO_VERY_HIGH_CMD_LIMIT    28.0f
+#define GUANDAO_SHARP_TURN_ANGLE       45.0f
+#define GUANDAO_SHARP_TURN_SPEED_RATIO 0.55f
+#define GUANDAO_STEER_RATE_LOW         3.0f
+#define GUANDAO_STEER_RATE_HIGH        1.5f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
+// Alias to align naming with example project
+#define GUANDAO_AUTO_GPS_RECORD_DIST   PORTION2_AUTO_GPS_RECORD_DIST
 #define PORTION1_PARK_INDEX_WINDOW     40
 #define PORTION1_PARK_ENTER_DISTANCE   2.0f
 #define PORTION1_PARK_CRAWL_DISTANCE   0.8f
@@ -57,6 +84,101 @@ static uint8 portion2_state_flag = 0;
 #define PORTION1_PARK_MIN_SPEED        2.0f
 #define PORTION1_PARK_CRAWL_SPEED      3.0f
 #define PORTION1_END_MIN_SPEED         3.0f
+#define PORTION3_PURSUIT_THRESHOLD     0.25f
+#define PORTION3_FINAL_STOP_DIST       0.6f
+
+static int16 guandao_route_length(guandao_state *state);
+static uint8 portion2_route_required_gps(uint8 route_id);
+
+static long portion2_serial_fixed100(float value)
+{
+    if(value >= 0.0f)
+    {
+        return (long)(value * 100.0f + 0.5f);
+    }
+    return (long)(value * 100.0f - 0.5f);
+}
+
+static void portion2_serial_append_fixed100(char *line, int *pos, int size, float value)
+{
+    long scaled = portion2_serial_fixed100(value);
+    long whole;
+    long frac;
+
+    if(scaled < 0)
+    {
+        line[(*pos)++] = '-';
+        scaled = -scaled;
+    }
+
+    whole = scaled / 100;
+    frac = scaled % 100;
+    *pos += sprintf(&line[*pos], "%ld.%02ld", whole, frac);
+    if(*pos >= size) *pos = size - 1;
+}
+
+static void portion2_serial_write_state_point(const char *prefix, uint8 route_id, uint16 point_index, state_t point)
+{
+    char line[160];
+    int pos = 0;
+
+    pos += sprintf(line, "%s route=%u pt=%u x=", prefix, (unsigned)(route_id + 1), (unsigned)point_index);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), point.x);
+    pos += sprintf(&line[pos], " y=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), point.y);
+    pos += sprintf(&line[pos], " theta=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), point.theta);
+    pos += sprintf(&line[pos], " gps=%u/%u\r\n",
+                   (unsigned)portion2_route_gps_count[route_id],
+                   (unsigned)portion2_route_required_gps(route_id));
+    if(pos > 0)
+    {
+        uart_write_string(DEBUG_UART_INDEX, line);
+    }
+}
+
+static void portion2_serial_log_run(void)
+{
+    static uint32 last_ms = 0;
+    uint32 now_ms;
+    uint16 route_len;
+    char line[192];
+    int pos = 0;
+
+    if(!portion2_serial_trace_enabled) return;
+
+    now_ms = system_getval_ms();
+    if((uint32)(now_ms - last_ms) < 100U) return;
+    last_ms = now_ms;
+
+    route_len = (uint16)guandao_route_length(&portion_2);
+    pos += sprintf(line,
+                   "[P2-RUN] route=%u state=%u idx=%d/%u x=",
+                   (unsigned)(portion2_selected_route + 1),
+                   (unsigned)portion2_state_flag,
+                   portion_2.current_point_index,
+                   (unsigned)route_len);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion_2.current_state.x);
+    pos += sprintf(&line[pos], " y=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion_2.current_state.y);
+    pos += sprintf(&line[pos], " yaw=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), Yaw_1);
+    pos += sprintf(&line[pos], " vl=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_v_l);
+    pos += sprintf(&line[pos], " vr=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_v_r);
+    pos += sprintf(&line[pos], " servo=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_servo);
+    pos += sprintf(&line[pos], " dist=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_distance);
+    pos += sprintf(&line[pos], " reason=%u rev=%u\r\n",
+                   (unsigned)guandao_debug_stop_reason,
+                   (unsigned)(portion2_run_drive_reverse ? 2 : portion2_run_reverse));
+    if(pos > 0)
+    {
+        uart_write_string(DEBUG_UART_INDEX, line);
+    }
+}
 
 static int16 guandao_clamp_length(int16 length)
 {
@@ -86,6 +208,37 @@ static float guandao_normalize_angle(float angle)
     while(angle > 180.0f) angle -= 360.0f;
     while(angle < -180.0f) angle += 360.0f;
     return angle;
+}
+
+static float guandao_segment_yaw(state_t from, state_t to)
+{
+    return atan2f(to.x - from.x, to.y - from.y) / M_PI * 180.0f;
+}
+
+static uint8 guandao_uses_portion3_trace_standard(guandao_state *state)
+{
+    return (route_setting_choice == 2 || state == &portion_2) ? 1 : 0;
+}
+
+static float guandao_max_route_turn(guandao_state *state, int start_index, int lookahead)
+{
+    float max_turn = 0.0f;
+    int16 route_length = guandao_route_length(state);
+    int end_index = start_index + lookahead;
+
+    if(route_length < 3) return 0.0f;
+    if(start_index < 1) start_index = 1;
+    if(end_index > route_length - 2) end_index = route_length - 2;
+
+    for(int i = start_index; i <= end_index; i++)
+    {
+        float yaw_in = guandao_segment_yaw(guandao_route_point(state, i - 1), guandao_route_point(state, i));
+        float yaw_out = guandao_segment_yaw(guandao_route_point(state, i), guandao_route_point(state, i + 1));
+        float turn = fabsf(guandao_normalize_angle(yaw_out - yaw_in));
+        if(turn > max_turn) max_turn = turn;
+    }
+
+    return max_turn;
 }
 
 static int guandao_find_closest_index(guandao_state *state, int start_index, int end_index)
@@ -342,6 +495,9 @@ void guandao_build_smooth_plan(guandao_state * state)
         state_t p1 = state->recode_map[i];
         state_t p2 = state->recode_map[i + 1];
         state_t p3 = state->recode_map[(i + 2 < source_length) ? i + 2 : i + 1];
+        float turn_in = fabsf(guandao_normalize_angle(guandao_segment_yaw(p0, p1) - guandao_segment_yaw(p1, p2)));
+        float turn_out = fabsf(guandao_normalize_angle(guandao_segment_yaw(p1, p2) - guandao_segment_yaw(p2, p3)));
+        uint8 keep_corner_linear = (turn_in >= GUANDAO_SHARP_TURN_ANGLE || turn_out >= GUANDAO_SHARP_TURN_ANGLE);
 
         for(int j = 0; j < samples && state->planned_length < MAX_LENGTH_INDEX - 1; j++)
         {
@@ -349,8 +505,16 @@ void guandao_build_smooth_plan(guandao_state * state)
             float t2 = t * t;
             float t3 = t2 * t;
             state_t out;
-            out.x = 0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * t + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2 + (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * t3);
-            out.y = 0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * t + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2 + (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * t3);
+            if(keep_corner_linear)
+            {
+                out.x = p1.x + (p2.x - p1.x) * t;
+                out.y = p1.y + (p2.y - p1.y) * t;
+            }
+            else
+            {
+                out.x = 0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * t + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2 + (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * t3);
+                out.y = 0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * t + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2 + (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * t3);
+            }
             out.theta = p1.theta + (p2.theta - p1.theta) * t;
             state->planned_map[state->planned_length] = out;
             state->planned_length++;
@@ -385,7 +549,16 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     float actual_ld = 0 , preview_alpha =0;
     float actual_ld2 = 0 , preview_alpha2 =0;
     float target_steering = 0;
+    float steering_gain = GUANDAO_STEERING_GAIN;
+    float steering_limit = GUANDAO_STEERING_CMD_LIMIT;
+    float steering_rate_limit = GUANDAO_STEER_RATE_LOW;
+    static float last_target_steering = 0.0f;
+    static uint32 last_steer_limit_ms = 0;
+    int steer_preview_steps = preview_spets;
+    int curve_preview_steps = 5;
     int16 route_length = guandao_route_length(state);
+    float arrive_threshold = persuit_threshold;
+    float upcoming_turn = 0.0f;
 
     guandao_debug_stop_reason = 0;
     if(route_length == 0 || state->current_point_index == route_length)
@@ -394,6 +567,8 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         * out_v_l = 0;
         * out_v_r = 0;
         *out_servo = 0;
+        last_target_steering = 0.0f;
+        last_steer_limit_ms = 0;
 //        Buzzer_check(50);
         return;
     }
@@ -401,6 +576,10 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     state_t current_point = state->current_state;
     if(state->current_point_index < 0) state->current_point_index = 0;
     if(state->current_point_index >= route_length) state->current_point_index = route_length - 1;
+    if(guandao_uses_portion3_trace_standard(state))
+    {
+        arrive_threshold = PORTION3_PURSUIT_THRESHOLD;
+    }
 
     int search_end_index = state->current_point_index + GUANDAO_TRACE_SEARCH_POINTS;
     if(search_end_index >= route_length) search_end_index = route_length - 1;
@@ -441,7 +620,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
 
     
     
-    if(distance_to_target <= persuit_threshold)
+    if(distance_to_target <= arrive_threshold)
     {
         if(guandao_debug_stop_reason == 0) guandao_debug_stop_reason = 2;
         state->current_point_index++;
@@ -451,35 +630,59 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
             * out_v_l = 0;
             * out_v_r = 0;
             *out_servo = 0;
+            last_target_steering = 0.0f;
+            last_steer_limit_ms = 0;
 //            Buzzer_check(50);
             return;
         }
     }
 
-    
-    pursuit_midhandle(state , &current_point , preview_spets , &preview_alpha , &actual_ld);
-    pursuit_midhandle(state , &current_point , 5 , &preview_alpha2 , &actual_ld2);
+    if(base_speed > GUANDAO_HIGH_SPEED_THRESHOLD)
+    {
+        steering_gain = GUANDAO_HIGH_SPEED_GAIN;
+        steering_limit = GUANDAO_HIGH_SPEED_CMD_LIMIT;
+        if(base_speed >= GUANDAO_VERY_HIGH_SPEED_THRESHOLD)
+        {
+            steering_gain = GUANDAO_VERY_HIGH_SPEED_GAIN;
+            steering_limit = GUANDAO_VERY_HIGH_CMD_LIMIT;
+            if(steer_preview_steps < 8) steer_preview_steps = 8;
+            steering_rate_limit = GUANDAO_STEER_RATE_HIGH;
+        }
+        else if(base_speed >= 10.0f)
+        {
+            if(steer_preview_steps < 4) steer_preview_steps = 4;
+        }
+    }
+    upcoming_turn = guandao_max_route_turn(state, state->current_point_index, 12);
+    if(upcoming_turn >= GUANDAO_SHARP_TURN_ANGLE)
+    {
+        if(steer_preview_steps > 3) steer_preview_steps = 3;
+        if(curve_preview_steps > 6) curve_preview_steps = 6;
+        steering_rate_limit = GUANDAO_STEER_RATE_LOW;
+        steering_limit = GUANDAO_STEERING_CMD_LIMIT;
+    }
+    if(curve_preview_steps < steer_preview_steps + 3)
+    {
+        curve_preview_steps = steer_preview_steps + 3;
+    }
 
-   float k = 0;
-   k = -0.0038*fabs(preview_alpha2) + 1;
-   Value_Limit_float(&k ,0.6 ,1);
+    pursuit_midhandle(state , &current_point , steer_preview_steps , &preview_alpha , &actual_ld);
+    pursuit_midhandle(state , &current_point , curve_preview_steps , &preview_alpha2 , &actual_ld2);
 
    if(angle_diff >=90)
    {
-       target_steering = 30.0f;
+       target_steering = steering_limit;
 
    }
    else if(angle_diff <= -90)
    {
-       target_steering = -30.0f;
+       target_steering = -steering_limit;
    }
    else if(fabsf(angle_diff) <=90)
    {
-       target_steering = 3.0f*atan2f(2.0f * WHEEL_BASE * sinf(preview_alpha/180.0f*M_PI), actual_ld)/M_PI*180.0f;
+       target_steering = steering_gain*atan2f(2.0f * WHEEL_BASE * sinf(preview_alpha/180.0f*M_PI), actual_ld)/M_PI*180.0f;
    }
    ips200_show_float(X(10),  Y(9),target_steering ,5 ,5);
-
-   
    Value_Limit_float(&target_steering ,-MAX_STEERING_RAD,MAX_STEERING_RAD);
 
 //   slip_cheak(&guandao_ecd,target_steering);
@@ -489,13 +692,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    guandao_debug_dist_final = dist_to_final;
    float v_center = base_speed;
    uint8 portion1_parking_zone = 0;
-
-   if(main_mode == Guandao_portion_1 && state == &INS &&
-      state->current_point_index >= route_length - PORTION1_PARK_INDEX_WINDOW &&
-      dist_to_final < PORTION1_PARK_ENTER_DISTANCE)
-   {
-       portion1_parking_zone = 1;
-   }
 
    if(portion1_parking_zone)
    {
@@ -516,6 +712,8 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
            *out_v_l = 0;
            *out_v_r = 0;
            *out_servo = 0;
+           last_target_steering = 0.0f;
+           last_steer_limit_ms = 0;
            return;
        }
 
@@ -544,13 +742,14 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
            azimuth_adjust(state , 1.3 , dist_to_final , &target_steering ,CORRECT_ANGLE_1);
            break;
        case 2:
-           azimuth_adjust(state , 5.5 , dist_to_final , &target_steering ,CORRECT_ANGLE_3);
            break;
        case 3:
 
            break;
        default : break;
    }
+
+   Value_Limit_float(&target_steering ,-steering_limit,steering_limit);
 
    if(portion1_parking_zone)
    {
@@ -563,20 +762,76 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
        }
        if(v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
    }
-   else if (dist_to_final < final_dsts && state->current_point_index >= route_length - 30)
-   {
 
-       persuit_threshold = persuit_threshold*(dist_to_final / final_dsts);
-       if(persuit_threshold < 0.3f){persuit_threshold = 0.3f;}
-       v_center = base_speed * (dist_to_final / final_dsts);
-       if (v_center < PORTION1_END_MIN_SPEED) v_center = PORTION1_END_MIN_SPEED;
+   if(fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE)
+   {
+       float curve_scale = 1.0f - (fabsf(preview_alpha2) - GUANDAO_CURVE_TRIGGER_ANGLE) / 90.0f;
+       Value_Limit_float(&curve_scale, 0.55f, 1.0f);
+       v_center = base_speed * curve_scale;
+       if(v_center < MIN_SPEED) v_center = MIN_SPEED;
+   }
+   if(base_speed >= GUANDAO_VERY_HIGH_SPEED_THRESHOLD && (fabsf(angle_diff) > 25.0f || fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE))
+   {
+       if(v_center > base_speed * GUANDAO_CURVE_SPEED_RATIO)
+       {
+           v_center = base_speed * GUANDAO_CURVE_SPEED_RATIO;
+       }
+   }
+   else if(base_speed > GUANDAO_HIGH_SPEED_THRESHOLD && (fabsf(angle_diff) > 30.0f || fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE))
+   {
+       if(v_center > base_speed * 0.75f)
+       {
+           v_center = base_speed * 0.75f;
+       }
    }
 
-   
+   if (!portion1_parking_zone && dist_to_final < final_dsts && state->current_point_index >= route_length - 30)
+   {
+
+       arrive_threshold = persuit_threshold*(dist_to_final / final_dsts);
+       if(arrive_threshold < 0.3f){arrive_threshold = 0.3f;}
+       v_center = base_speed * (dist_to_final / final_dsts);
+       if(guandao_uses_portion3_trace_standard(state))
+       {
+           if (v_center < MIN_SPEED) v_center = MIN_SPEED;
+       }
+       else if (v_center < PORTION1_END_MIN_SPEED) v_center = PORTION1_END_MIN_SPEED;
+   }
+
+   if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
+   if(guandao_uses_portion3_trace_standard(state) && state->current_point_index >= route_length - 1
+           && dist_to_final <= PORTION3_FINAL_STOP_DIST)
+   {
+       state->current_point_index = route_length;
+       guandao_debug_stop_reason = 8;
+       * out_v_l = 0;
+       * out_v_r = 0;
+       *out_servo = 0;
+       last_target_steering = 0.0f;
+       last_steer_limit_ms = 0;
+       return;
+   }
+   Value_Limit_float(&target_steering ,-steering_limit,steering_limit);
+
+   if(state->current_point_index <= 2)
+   {
+       last_target_steering = target_steering;
+       last_steer_limit_ms = system_getval_ms();
+   }
+   uint32 steer_now_ms = system_getval_ms();
+   uint32 steer_elapsed_ms = (last_steer_limit_ms == 0) ? 20u : (uint32)(steer_now_ms - last_steer_limit_ms);
+   if(steer_elapsed_ms > 100u) steer_elapsed_ms = 20u;
+   float steer_delta_limit = steering_rate_limit * ((float)steer_elapsed_ms / 20.0f);
+   float steer_delta = target_steering - last_target_steering;
+   Value_Limit_float(&steer_delta, -steer_delta_limit, steer_delta_limit);
+   target_steering = last_target_steering + steer_delta;
+   Value_Limit_float(&target_steering ,-steering_limit,steering_limit);
+   last_target_steering = target_steering;
+   last_steer_limit_ms = steer_now_ms;
+
    float w = (v_center * tanf(target_steering/3.0f/180.0f*M_PI)) / WHEEL_BASE;
    *out_v_l = v_center + (w * TRACK_WIDTH / 2.0f);
    *out_v_r = v_center - (w * TRACK_WIDTH / 2.0f);
-
    *out_servo = -target_steering;
 
 }
@@ -608,14 +863,7 @@ void pursuit_midhandle(guandao_state * state ,state_t * current_state , int inde
         *distanse = 0.1f;
         return;
     }
-    if(main_mode == Guandao_Recode_Mode)
-    {
-        preview_index = state->length_index - 1;
-    }
-    else
-    {
-        preview_index = state->current_point_index+index;
-    }
+    preview_index = state->current_point_index+index;
 
    if(preview_index >= route_length)preview_index = route_length - 1;
 
@@ -732,6 +980,7 @@ void guandao_recode(guandao_state * state)
 
     if(GPS_WORK_FLAG){if(key2_flag == 1){ key2_flag = 0 ; recode_gps(p);  }}        
 //     guandao_show();
+
 }
 
 uint8 portion2_points_build(void)
@@ -804,6 +1053,20 @@ static uint8 portion2_route_required_gps(uint8 route_id)
     return portion2_route_required_gps_count[route_id];
 }
 
+static uint8 portion2_route_ready_for_run(uint8 route_id)
+{
+    uint8 required;
+
+    if(route_id >= PORTION2_ROUTE_COUNT) return 0;
+
+    required = portion2_route_required_gps(route_id);
+    if(required == 0) return 0;
+    if(portion2_route_length[route_id] < required) return 0;
+    if(portion2_route_gps_count[route_id] < required) return 0;
+
+    return 1;
+}
+
 static uint8 portion2_route_gps_offset(uint8 route_id)
 {
     uint8 offset = 0;
@@ -814,6 +1077,68 @@ static uint8 portion2_route_gps_offset(uint8 route_id)
         offset += portion2_route_required_gps(i);
     }
     return offset;
+}
+
+void portion2_serial_dump_routes(void)
+{
+    char line[120];
+
+    uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] routes summary\r\n");
+    for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+    {
+        sprintf(line,
+                "[P2-DUMP] route=%u pts=%u gps=%u/%u saved=%s\r\n",
+                (unsigned)(i + 1),
+                (unsigned)portion2_route_length[i],
+                (unsigned)portion2_route_gps_count[i],
+                (unsigned)portion2_route_required_gps(i),
+                portion2_route_saved_flag[i] ? "YES" : "NO");
+        uart_write_string(DEBUG_UART_INDEX, line);
+    }
+    uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] send D1-D9 to dump points, T toggle run trace, S stop\r\n");
+}
+
+void portion2_serial_dump_route(uint8 route_id)
+{
+    uint16 len;
+    uint16 offset;
+    char line[120];
+
+    if(route_id >= PORTION2_ROUTE_COUNT)
+    {
+        uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] invalid route\r\n");
+        return;
+    }
+
+    len = portion2_route_length[route_id];
+    offset = portion2_route_offset(route_id);
+    if(len > PORTION2_ROUTE_MAX_POINTS) len = PORTION2_ROUTE_MAX_POINTS;
+
+    sprintf(line,
+            "[P2-DUMP] route=%u pts=%u gps=%u/%u begin\r\n",
+            (unsigned)(route_id + 1),
+            (unsigned)len,
+            (unsigned)portion2_route_gps_count[route_id],
+            (unsigned)portion2_route_required_gps(route_id));
+    uart_write_string(DEBUG_UART_INDEX, line);
+
+    for(uint16 i = 0; i < len; i++)
+    {
+        portion2_serial_write_state_point("[P2-DUMP]", route_id, i, passage.recode_map[offset + i]);
+    }
+
+    uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] route end\r\n");
+}
+
+void portion2_serial_toggle_trace(void)
+{
+    portion2_serial_trace_enabled = !portion2_serial_trace_enabled;
+    uart_write_string(DEBUG_UART_INDEX, portion2_serial_trace_enabled ? "[P2-RUN] trace=ON\r\n" : "[P2-RUN] trace=OFF\r\n");
+}
+
+uint8 portion2_is_running(void)
+{
+    return (portion2_state_flag != 0) ? 1 : 0;
 }
 
 static void portion2_record_point(void)
@@ -828,6 +1153,8 @@ static void portion2_record_point(void)
     {
         passage.recode_map[offset] = passage.current_state;
         portion2_route_length[portion2_record_route] = 1;
+        portion2_route_saved_flag[portion2_record_route] = 0;
+        portion2_serial_write_state_point("[P2-REC]", portion2_record_route, 0, passage.current_state);
         return;
     }
 
@@ -835,6 +1162,8 @@ static void portion2_record_point(void)
     {
         passage.recode_map[offset + len] = passage.current_state;
         portion2_route_length[portion2_record_route]++;
+        portion2_route_saved_flag[portion2_record_route] = 0;
+        portion2_serial_write_state_point("[P2-REC]", portion2_record_route, len, passage.current_state);
     }
 }
 
@@ -856,6 +1185,7 @@ static void portion2_record_gps_point(void)
     passage.gps_recode_length = portion2_route_gps_offset(portion2_record_route) + portion2_route_gps_count[portion2_record_route];
     portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
     portion2_gps_auto_has_point[portion2_record_route] = 1;
+    portion2_route_saved_flag[portion2_record_route] = 0;
     Buzzer_check(30);
 }
 
@@ -920,16 +1250,166 @@ void portion2_record_reset(void)
         portion2_route_length[i] = 0;
         portion2_route_gps_count[i] = 0;
         portion2_gps_auto_has_point[i] = 0;
+        portion2_route_saved_flag[i] = 0;
     }
     passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
     passage.gps_recode_length = 0;
 }
 
+void portion2_record_mark_loaded_routes_saved(void)
+{
+    for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+    {
+        portion2_route_saved_flag[i] = (portion2_route_length[i] > 0) ? 1 : 0;
+    }
+}
+
+static void portion2_record_key_state_reset(void)
+{
+    portion2_record_k1_start_ms = 0;
+    portion2_record_k2_start_ms = 0;
+    portion2_record_k3_start_ms = 0;
+    portion2_record_k4_start_ms = 0;
+    portion2_record_k1_wait_release = 0;
+    portion2_record_k2_wait_release = 0;
+    portion2_record_k3_wait_release = 0;
+    portion2_record_k4_wait_release = 0;
+    key1_flag = 0;
+    key2_flag = 0;
+    key3_flag = 0;
+    key4_flag = 0;
+}
+
+void portion2_record_enter_mode(void)
+{
+    portion2_record_key_state_reset();
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT)
+    {
+        portion2_record_route = 0;
+    }
+    if(portion2_record_state == 1)
+    {
+        portion2_record_state = 2;
+    }
+}
+
 void portion2_record_task(void)
 {
+    uint8 k1_short = 0, k2_short = 0, k3_short = 0, k4_short = 0;
+    uint8 k1_long = 0, k2_long = 0, k3_long = 0, k4_long = 0;
+    uint32 now_ms;
+
     if(portion2_record_route >= PORTION2_ROUTE_COUNT)
     {
         portion2_record_state = 3;
+    }
+
+    now_ms = system_getval_ms();
+    if(gpio_get_level(KEY1) == 0)
+    {
+        if(portion2_record_k1_start_ms == 0) portion2_record_k1_start_ms = now_ms;
+        if(!portion2_record_k1_wait_release && (uint32)(now_ms - portion2_record_k1_start_ms) > 1500U)
+        {
+            k1_long = 1; portion2_record_k1_wait_release = 1;
+        }
+    }
+    else
+    {
+        if(portion2_record_k1_start_ms != 0 && !portion2_record_k1_wait_release) k1_short = 1;
+        portion2_record_k1_start_ms = 0; portion2_record_k1_wait_release = 0;
+    }
+
+    if(gpio_get_level(KEY2) == 0)
+    {
+        if(portion2_record_k2_start_ms == 0) portion2_record_k2_start_ms = now_ms;
+        if(!portion2_record_k2_wait_release && (uint32)(now_ms - portion2_record_k2_start_ms) > 1500U)
+        {
+            k2_long = 1; portion2_record_k2_wait_release = 1;
+        }
+    }
+    else
+    {
+        if(portion2_record_k2_start_ms != 0 && !portion2_record_k2_wait_release) k2_short = 1;
+        portion2_record_k2_start_ms = 0; portion2_record_k2_wait_release = 0;
+    }
+
+    if(gpio_get_level(KEY3) == 0)
+    {
+        if(portion2_record_k3_start_ms == 0) portion2_record_k3_start_ms = now_ms;
+        if(!portion2_record_k3_wait_release && (uint32)(now_ms - portion2_record_k3_start_ms) > 1500U)
+        {
+            k3_long = 1; portion2_record_k3_wait_release = 1;
+        }
+    }
+    else
+    {
+        if(portion2_record_k3_start_ms != 0 && !portion2_record_k3_wait_release) k3_short = 1;
+        portion2_record_k3_start_ms = 0; portion2_record_k3_wait_release = 0;
+    }
+
+    if(gpio_get_level(KEY4) == 0)
+    {
+        if(portion2_record_k4_start_ms == 0) portion2_record_k4_start_ms = now_ms;
+        if(!portion2_record_k4_wait_release && (uint32)(now_ms - portion2_record_k4_start_ms) > 1500U)
+        {
+            k4_long = 1; portion2_record_k4_wait_release = 1;
+        }
+    }
+    else
+    {
+        if(portion2_record_k4_start_ms != 0 && !portion2_record_k4_wait_release) k4_short = 1;
+        portion2_record_k4_start_ms = 0; portion2_record_k4_wait_release = 0;
+    }
+    if(key4_flag)
+    {
+        key4_flag = 0;
+        k4_short = 1;
+    }
+
+    if(k1_long)
+    {
+        portion2_route_length[portion2_record_route] = 0;
+        portion2_route_gps_count[portion2_record_route] = 0;
+        portion2_gps_auto_has_point[portion2_record_route] = 0;
+        portion2_route_saved_flag[portion2_record_route] = 0;
+        Buzzer_check(80);
+    }
+    if(k2_long)
+    {
+        Flash_Write_passage_points();
+        portion2_route_saved_flag[portion2_record_route] = (portion2_route_length[portion2_record_route] > 0) ? 1 : 0;
+        Buzzer_check(150);
+    }
+    if(k3_long)
+    {
+        portion2_record_point();
+        portion2_auto_record_gps_point();
+        Buzzer_check(30);
+    }
+    if(k4_long)
+    {
+        // 保留按键长按检测，但不执行“保存全部路线”动作（按用户需求移除）
+    }
+
+    if(k1_short && portion2_record_state != 1)
+    {
+        if(portion2_record_route > 0) portion2_record_route--;
+        Buzzer_check(20);
+    }
+    if(k2_short && portion2_record_state != 1)
+    {
+        if(portion2_record_route + 1 < PORTION2_ROUTE_COUNT) portion2_record_route++;
+        Buzzer_check(20);
+    }
+    if(k4_short)
+    {
+        portion2_record_key_state_reset();
+        main_mode = Guandao_Voice;
+        route_setting_choice = 3;
+        conrtol_mode = GUANDAO;
+        Buzzer_check(50);
+        ips200_clear();
+        return;
     }
 
     switch(portion2_record_state)
@@ -939,9 +1419,8 @@ void portion2_record_task(void)
             out_v_l = 0;
             out_v_r = 0;
             out_servo = 0;
-            if(key1_flag)
+            if(k3_short)
             {
-                key1_flag = 0;
                 guandao_state_init(&passage);
                 passage.current_state.theta = Yaw_1;
                 Encoder_Get(&guandao_ecd);
@@ -949,6 +1428,7 @@ void portion2_record_task(void)
                 portion2_route_length[portion2_record_route] = 0;
                 portion2_route_gps_count[portion2_record_route] = 0;
                 portion2_gps_auto_has_point[portion2_record_route] = 0;
+                portion2_route_saved_flag[portion2_record_route] = 0;
                 portion2_record_point();
                 portion2_auto_record_gps_point();
                 portion2_record_state = 1;
@@ -959,9 +1439,10 @@ void portion2_record_task(void)
             update_state(&passage, &guandao_ecd);
             portion2_record_point();
             portion2_auto_record_gps_point();
-            if(key3_flag)
+            if(k3_short)
             {
-                key3_flag = 0;
+                portion2_record_state = 2;
+                Buzzer_check(50);
             }
             if(key2_flag)
             {
@@ -982,11 +1463,21 @@ void portion2_record_task(void)
             out_v_l = 0;
             out_v_r = 0;
             out_servo = 0;
-            if(key4_flag)
+            if(k3_short)
             {
-                key4_flag = 0;
-                Flash_Write_passage_points();
-                Buzzer_check(200);
+                portion2_record_route = 0;
+                guandao_state_init(&passage);
+                passage.current_state.theta = Yaw_1;
+                Encoder_Get(&guandao_ecd);
+                passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
+                portion2_route_length[portion2_record_route] = 0;
+                portion2_route_gps_count[portion2_record_route] = 0;
+                portion2_gps_auto_has_point[portion2_record_route] = 0;
+                portion2_route_saved_flag[portion2_record_route] = 0;
+                portion2_record_point();
+                portion2_auto_record_gps_point();
+                portion2_record_state = 1;
+                Buzzer_check(50);
             }
             break;
         default:
@@ -994,14 +1485,27 @@ void portion2_record_task(void)
             break;
     }
 
-    ips200_show_string(X(1), Y(8), "P2REC");
-    ips200_show_int(X(8), Y(8), portion2_record_route + 1, 2);
-    ips200_show_string(X(1), Y(9), "State");
-    ips200_show_int(X(8), Y(9), portion2_record_state, 2);
-    ips200_show_string(X(1), Y(10), "Len");
-    ips200_show_int(X(6), Y(10), portion2_route_length[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1], 4);
-    ips200_show_string(X(1), Y(11), "GPS");
-    ips200_show_int(X(6), Y(11), portion2_route_gps_count[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1], 2);
+    ips200_show_string(X(1), Y(0), "MODE: RECORD");
+    ips200_show_string(X(1), Y(1), "ROUTE: ");
+    ips200_show_int(X(9), Y(1), portion2_record_route + 1, 2);
+    ips200_show_string(X(1), Y(2), "STATE: ");
+    switch(portion2_record_state)
+    {
+        case 0: ips200_show_string(X(9), Y(2), "IDLE "); break;
+        case 1: ips200_show_string(X(9), Y(2), "RECORD"); break;
+        case 2: ips200_show_string(X(9), Y(2), "WAIT "); break;
+        case 3: ips200_show_string(X(9), Y(2), "DONE "); break;
+        default: ips200_show_string(X(9), Y(2), "--   "); break;
+    }
+    ips200_show_string(X(1), Y(3), "PTS: ");
+    ips200_show_int(X(6), Y(3), portion2_route_length[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1], 4);
+    ips200_show_string(X(1), Y(4), "SAVED: ");
+    ips200_show_string(X(9), Y(4), portion2_route_saved_flag[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1] ? "YES" : "NO ");
+
+    ips200_show_string(X(1),  Y(12), "K1:-/CLR");
+    ips200_show_string(X(1),  Y(13), "K2:+/SAVE");
+    ips200_show_string(X(1),  Y(14), "K3:REC/PT");
+    ips200_show_string(X(1),  Y(15), "K4:RUN");
 }
 
 void portion2_run_select_route(uint8 route_id)
@@ -1014,11 +1518,13 @@ void portion2_run_select_route(uint8 route_id)
     if(route_id >= PORTION2_ROUTE_COUNT)
     {
         portion2_run_reject_reason = 1;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
-    if(portion2_route_length[route_id] == 0)
+    if(!portion2_route_ready_for_run(route_id))
     {
-        portion2_run_reject_reason = 2;
+        portion2_run_reject_reason = 4;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
     portion2_selected_route = route_id;
@@ -1035,11 +1541,13 @@ void portion2_run_select_reverse_route(uint8 route_id)
     if(route_id > PORTION2_ROUTE_5)
     {
         portion2_run_reject_reason = 3;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
-    if(portion2_route_length[route_id] == 0)
+    if(!portion2_route_ready_for_run(route_id))
     {
-        portion2_run_reject_reason = 2;
+        portion2_run_reject_reason = 4;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
     portion2_selected_route = route_id;
@@ -1057,11 +1565,13 @@ void portion2_run_select_back_route(uint8 route_id)
     if(route_id != PORTION2_ROUTE_STRAIGHT && route_id != PORTION2_ROUTE_SNAKE)
     {
         portion2_run_reject_reason = 3;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
-    if(portion2_route_length[route_id] == 0)
+    if(!portion2_route_ready_for_run(route_id))
     {
-        portion2_run_reject_reason = 2;
+        portion2_run_reject_reason = 4;
+        Buzzer_check(80); Buzzer_check(80);
         return;
     }
     portion2_selected_route = route_id;
@@ -1151,6 +1661,7 @@ void portion2_run_task(void)
             break;
         case 2:
             guandao_trace_direct(&portion_2);
+            portion2_serial_log_run();
             if(portion_2.current_point_index >= guandao_route_length(&portion_2))
             {
                 out_v_l = 0;
@@ -1178,27 +1689,35 @@ void portion2_run_task(void)
             break;
     }
 
-    ips200_show_string(X(1), Y(8), "P2RUN");
-    ips200_show_string(X(1), Y(9), "Route");
-    ips200_show_int(X(8), Y(9), portion2_selected_route + 1, 2);
-    ips200_show_string(X(1), Y(10), "State");
-    ips200_show_int(X(8), Y(10), portion2_state_flag, 2);
-    ips200_show_string(X(1), Y(11), "Len");
-    ips200_show_int(X(6), Y(11), portion_2.length_index, 4);
-    ips200_show_string(X(1), Y(12), "Idx");
-    ips200_show_int(X(6), Y(12), portion_2.current_point_index, 4);
-    ips200_show_string(X(1), Y(13), "RX");
-    ips200_show_int(X(5), Y(13), portion2_run_last_rx, 3);
-    ips200_show_string(X(10), Y(13), "Cnt");
-    ips200_show_int(X(15), Y(13), portion2_run_rx_count, 4);
-    ips200_show_string(X(1), Y(14), "RLen");
-    ips200_show_int(X(7), Y(14), portion2_route_length[portion2_selected_route], 4);
-    ips200_show_string(X(12), Y(14), "Rej");
-    ips200_show_int(X(17), Y(14), portion2_run_reject_reason, 2);
-    ips200_show_string(X(1), Y(15), "Scn");
-    ips200_show_int(X(6), Y(15), dot_matrix_screen_scan_count, 6);
-    ips200_show_string(X(13), Y(15), "Rev");
-    ips200_show_int(X(17), Y(15), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
+    {
+        static uint32 p2_last_ms = 0;
+        uint32 p2_now = system_getval_ms();
+        if(p2_now - p2_last_ms >= 100)
+        {
+            p2_last_ms = p2_now;
+            ips200_show_string(X(1), Y(8), "P2RUN");
+            ips200_show_string(X(1), Y(9), "Route");
+            ips200_show_int(X(8), Y(9), portion2_selected_route + 1, 2);
+            ips200_show_string(X(1), Y(10), "State");
+            ips200_show_int(X(8), Y(10), portion2_state_flag, 2);
+            ips200_show_string(X(1), Y(11), "Len");
+            ips200_show_int(X(6), Y(11), portion_2.length_index, 4);
+            ips200_show_string(X(1), Y(12), "Idx");
+            ips200_show_int(X(6), Y(12), portion_2.current_point_index, 4);
+            ips200_show_string(X(1), Y(13), "RX");
+            ips200_show_int(X(5), Y(13), portion2_run_last_rx, 3);
+            ips200_show_string(X(10), Y(13), "Cnt");
+            ips200_show_int(X(15), Y(13), portion2_run_rx_count, 4);
+            ips200_show_string(X(1), Y(14), "RLen");
+            ips200_show_int(X(7), Y(14), portion2_route_length[portion2_selected_route], 4);
+            ips200_show_string(X(12), Y(14), "Rej");
+            ips200_show_int(X(17), Y(14), portion2_run_reject_reason, 2);
+            ips200_show_string(X(1), Y(15), "Scn");
+            ips200_show_int(X(6), Y(15), dot_matrix_screen_scan_count, 6);
+            ips200_show_string(X(13), Y(15), "Rev");
+            ips200_show_int(X(17), Y(15), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
+        }
+    }
 }
 
 void guandao_trace(guandao_state * state)

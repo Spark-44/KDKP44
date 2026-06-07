@@ -9,6 +9,7 @@
 #define SUBJECT_2_FIXED_SNAKE_DISTANCE_M    (10.0f)
 #define SUBJECT_2_FIXED_SNAKE_PERIOD_MS     (1000U)
 #define SUBJECT_2_FIXED_TURN_ANGLE_DEG     (90.0f)
+#define SUBJECT_2_FIXED_TURN_TIMEOUT_MS     (60000U)
 #define SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG   (360.0f)
 #define SUBJECT_2_FIXED_STEER_DEG          (25.0f)
 
@@ -126,6 +127,34 @@ static float subject_2_fixed_turn_yaw_delta(void)
     return subject_2_fixed_yaw_step(Yaw_1, subject_2_fixed_action_state.yaw_target);
 }
 
+static void subject_2_fixed_log_state(const char *tag)
+{
+    static uint32 last_log_ms = 0;
+    uint32 now_ms = system_getval_ms();
+    char line[160];
+
+    if((uint32)(now_ms - last_log_ms) < 200U)
+    {
+        return;
+    }
+    last_log_ms = now_ms;
+
+    sprintf(line,
+            "[FIXED] %s mode=%u phase=%u dist=%ld.%02ld yaw=%ld.%02ld delta=%ld.%02ld target=%ld.%02ld\r\n",
+            tag,
+            (unsigned)subject_2_fixed_action_state.mode,
+            (unsigned)subject_2_fixed_action_state.turn_phase,
+            (long)subject_2_fixed_action_state.distance_m,
+            (long)(subject_2_fixed_abs_float(subject_2_fixed_action_state.distance_m - (long)subject_2_fixed_action_state.distance_m) * 100.0f),
+            (long)Yaw_1,
+            (long)(subject_2_fixed_abs_float(Yaw_1 - (long)Yaw_1) * 100.0f),
+            (long)voice_drive_action_get_yaw_delta(),
+            (long)(subject_2_fixed_abs_float(voice_drive_action_get_yaw_delta() - (long)voice_drive_action_get_yaw_delta()) * 100.0f),
+            (long)subject_2_fixed_action_state.yaw_target,
+            (long)(subject_2_fixed_abs_float(subject_2_fixed_action_state.yaw_target - (long)subject_2_fixed_action_state.yaw_target) * 100.0f));
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
 static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32 elapsed_ms, float distance_m, float yaw_delta, float yaw_target, float yaw_current, subject_2_fixed_action_output_t *output)
 {
     const subject_2_fixed_action_t *action;
@@ -188,6 +217,10 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
     else if(action->stop_type == SUBJECT_2_FIXED_STOP_YAW
             && (!subject_2_fixed_is_turn_action(mode) || subject_2_fixed_action_state.turn_phase == SUBJECT_2_FIXED_TURN_PHASE_TURN)
             && subject_2_fixed_abs_float(yaw_delta) >= action->stop_value)
+    {
+        output->finished = 1;
+    }
+    else if(subject_2_fixed_is_turn_action(mode) && elapsed_ms >= SUBJECT_2_FIXED_TURN_TIMEOUT_MS)
     {
         output->finished = 1;
     }
@@ -255,6 +288,7 @@ void voice_drive_action_task(void)
     subject_2_fixed_action_update(subject_2_fixed_action_state.mode, elapsed_ms, subject_2_fixed_action_state.distance_m, subject_2_fixed_action_state.yaw_delta, subject_2_fixed_action_state.yaw_target, Yaw_1, &fixed_action_output);
     speed_mps = fixed_action_output.speed_mps;
     steer_deg = fixed_action_output.steer_deg;
+    subject_2_fixed_log_state("RUN");
 
     subject_2_fixed_action_state.distance_m += subject_2_fixed_abs_float(speed_mps) * dt_s;
     subject_2_fixed_action_state.phase_distance_m += subject_2_fixed_abs_float(speed_mps) * dt_s;
@@ -263,6 +297,7 @@ void voice_drive_action_task(void)
     subject_2_fixed_action_update(subject_2_fixed_action_state.mode, elapsed_ms, subject_2_fixed_action_state.distance_m, subject_2_fixed_action_state.yaw_delta, subject_2_fixed_action_state.yaw_target, Yaw_1, &fixed_action_output);
     if(fixed_action_output.finished)
     {
+        subject_2_fixed_log_state("STOP");
         voice_drive_action_stop();
     }
 }

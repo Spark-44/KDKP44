@@ -29,24 +29,11 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
             case IDLE:
                 break;
 
-            case YAOKONG:
-                /* YAOKONG disabled: no steering action */
-                break;
-
             case GUANDAO:
                 Steer_Moter_Contral(out_servo);
                 break;
             case DAOCHE :
                 Steer_Moter_Contral(-out_servo);
-                break;
-            case RACK_TEST:
-                if(rack_test_stage == 1)Steer_Moter_Contral((float)rack_test_steer_target);
-                else if(rack_test_stage == 3)
-                {
-                    Rack_Straight_Update();
-                    Steer_Moter_Contral(rack_straight_steer_target);
-                }
-                else VeerMoter_Set(0);
                 break;
 
             default : break;
@@ -55,7 +42,7 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
     }
 
     
-    if(conrtol_mode == RACK_TEST || conrtol_mode == GUANDAO || conrtol_mode == DAOCHE)
+    if(conrtol_mode == GUANDAO || conrtol_mode == DAOCHE)
     {
         static uint8 rear_tick = 0;
         rear_tick++;
@@ -105,13 +92,9 @@ IFX_INTERRUPT(cc61_pit_ch1_isr, 0, CCU6_1_CH1_ISR_PRIORITY)
                 {
                     case IDLE:
                         break;
-                    case YAOKONG:
-                        break;
                     case GUANDAO:
                         break;
                     case DAOCHE:
-                        break;
-                    case RACK_TEST:
                         break;
                     default : break;
                 }

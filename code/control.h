@@ -9,11 +9,8 @@
 
 typedef  enum{
     IDLE,
-    YAOKONG,
     GUANDAO,
-    GPS,
-    DAOCHE,
-    RACK_TEST
+    DAOCHE
 }MOTER_control_mode;
 
 extern MOTER_control_mode conrtol_mode;

@@ -6,7 +6,7 @@ uint8 key_mode2 = 2;
 uint8 CarGo_Flag = 0;
 float *p;
 int16 *p1;
-Mode_Choice main_mode = Mode_IDLE;
+Mode_Choice main_mode = Guandao_Portion2_Recode;
 
 void Display_Init(void)
 {
@@ -15,25 +15,38 @@ void Display_Init(void)
     ips200_init(IPS200_TYPE);
 }
 
+static void Menu_Simple_Mode(void);
+
 void Menu_Contral(void)
 {
     while(1)
     {
-
-        key_value = Key_Get();                                          
-        if(key_mode2 == 1)          Menu_Main();              
-        else if(key_mode2 == 2)  Menu_1();
-        else if(key_mode2 == 3)  Menu_Parameter();
-        else if(key_mode2 == 4)  Menu_Mode_Choice();
-        else if(key_mode2 == 6)  Menu_Show_Route();
-        else if(key_mode2 == 7)  Show_Route();
-        else if(key_mode2 == 8) Menu_PID_P();
-        else if(key_mode2 == 9) Menu_Control_P();
-
-        if(CarGo_Flag == 1){ips200_clear();break;}         
+        key_value = Key_Get();
+        Menu_Simple_Mode();
+        if(CarGo_Flag == 1){ips200_clear();break;}
 
     }
 
+}
+
+static void Menu_Simple_Mode(void)
+{
+    ips200_show_string( X(8) ,Y(0) ,"Select Mode");
+    ips200_show_string( X(3) ,Y(3) ,"Run_Mode");
+    ips200_show_string( X(3) ,Y(4) ,"Record_Mode");
+
+    prompt();
+
+    if(key_value == 1)key_mode1 ++;
+    else if(key_value == 2)key_mode1 --;
+    key_mode1 =(key_mode1 > 4) ? 3  : key_mode1;
+    key_mode1 =(key_mode1 < 3) ? 4  : key_mode1;
+
+    if(key_value == 3)
+    {
+        if( key_mode1==3){main_mode = Guandao_Voice ; route_setting_choice = 3; conrtol_mode = GUANDAO ; CarGo_Flag = 1; ips200_clear(); Buzzer_check(50);} 
+        else if( key_mode1==4){main_mode = Guandao_Portion2_Recode ; route_setting_choice = 1; conrtol_mode = IDLE ; CarGo_Flag = 1; ips200_clear(); Buzzer_check(50);} 
+    }
 }
 
 void Menu_Main(void)
@@ -127,30 +140,20 @@ void Menu_Mode_Choice(void)
 {
     ips200_show_string( X(10) ,Y(0) ,"Mode");
 
-    ips200_show_string( X(3) ,Y(2) ,"NULL_Mode_IDLE");
     ips200_show_string( X(3) ,Y(3) ,"Voice_Mode");
     ips200_show_string( X(3) ,Y(4) ,"P2_Recode");
-    ips200_show_string( X(3) ,Y(5) ,"Guandao_portion_3");
-    ips200_show_string( X(3) ,Y(6) ,"Rack_Test");
-    ips200_show_string( X(3) ,Y(7) ,"YaoKong_Mode");
 
     prompt();
 
     if(key_value == 1)key_mode1 ++;
     else if(key_value == 2)key_mode1 --;
-    key_mode1 =(key_mode1 > 7) ? 2  : key_mode1;
-    key_mode1 =(key_mode1 < 2) ? 7  : key_mode1;
+    key_mode1 =(key_mode1 > 4) ? 3  : key_mode1;
+    key_mode1 =(key_mode1 < 3) ? 4  : key_mode1;
 
     if(key_value == 3)
     {
-        if(key_mode1 == 2){main_mode = Mode_IDLE ; conrtol_mode = IDLE ; CarGo_Flag = 1; ips200_clear(); Buzzer_check(50);}
-        else if( key_mode1==3){main_mode = Guandao_Voice ; route_setting_choice = 3; conrtol_mode = GUANDAO ;Buzzer_check(50);}
-        else if( key_mode1==4){main_mode = Guandao_Portion2_Recode ; route_setting_choice = 1; conrtol_mode = YAOKONG ; portion2_record_reset(); Buzzer_check(50);}
-        else if( key_mode1==5){main_mode = Guandao_portion_3 ; route_setting_choice = 2; conrtol_mode = GUANDAO ;Buzzer_check(50);}
-        else if( key_mode1==6){main_mode = Rack_Test_Mode ; conrtol_mode = RACK_TEST ; rack_test_stage = 0; rack_test_speed_target = 0; rack_test_steer_target = 0; Rack_Straight_Reset(); MoterPID_L.Kp = 0.5f; MoterPID_R.Kp = 0.5f; MoterPID_L.Ki = 1.0f; MoterPID_R.Ki = 1.0f; MoterPID_L.Kd = 0.0f; MoterPID_R.Kd = 0.0f; CarGo_Flag = 1; ips200_clear(); Buzzer_check(50);}
-        else if( key_mode1==7){main_mode = YaoKong_Mode ; conrtol_mode = YAOKONG ; CarGo_Flag = 1; ips200_clear(); Buzzer_check(50);}
-//        main_mode  = key_mode1 - 2;
-//        Buzzer_check(50);
+        if( key_mode1==3){main_mode = Guandao_Voice ; route_setting_choice = 3; conrtol_mode = GUANDAO ;Buzzer_check(50);}
+        else if( key_mode1==4){main_mode = Guandao_Portion2_Recode ; route_setting_choice = 1; conrtol_mode = IDLE ; Buzzer_check(50);}
     }
     if(key_value == 4){key_mode2 =1;ips200_clear();}
 }

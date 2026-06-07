@@ -24,7 +24,7 @@
 #define WHEEL_BASE                             0.724f     
 #define TRACK_WIDTH                            0.594f     
 #define GUANDAO_SPEED_TO_MPS                   (0.1f)
-#define MIN_SPEED                              10.0f      
+#define MIN_SPEED                              4.0f      
 #define MAX_STEERING_RAD                       90.0f      
 #define SLIP_CHEAK_INDEX                       4.0f       
 #define START_GPS_FLAG                         1          
@@ -145,12 +145,18 @@ void portion2_reset(void);
 void portion2_set_go_channel(uint8 channel);
 void portion2_set_back_channel(uint8 channel);
 void portion2_record_reset(void);
+void portion2_record_enter_mode(void);
+void portion2_record_mark_loaded_routes_saved(void);
 void portion2_record_task(void);
 void portion2_run_select_route(uint8 route_id);
 void portion2_run_select_reverse_route(uint8 route_id);
 void portion2_run_select_back_route(uint8 route_id);
 void portion2_run_stop(void);
 void portion2_run_task(void);
+void portion2_serial_dump_routes(void);
+void portion2_serial_dump_route(uint8 route_id);
+void portion2_serial_toggle_trace(void);
+uint8 portion2_is_running(void);
 
 void azimuth_adjust(guandao_state * state , float start_d , float dist_to_final , float * target_steering , float target_yaw );
 #endif /* CODE_GUANDAO_H_ */

@@ -1,14 +1,16 @@
-
 #include "zf_common_headfile.h"
 #include "IfxScu_reg.h"
 #include "screen.h"
 #include "offline_voice.h"
 #include "buzzer_action.h"
 #include "rear_motor/rear_motor.h"
+#include "guandao.h"
+#include "display.h"
 #include <stdio.h>
 #pragma section all "cpu0_dsram"
 
 extern int num;
+static uint8 voice_inited = 0;
 
 static void Guandao_Rear_Motor_Update(void)
 {
@@ -22,18 +24,9 @@ static void Guandao_Rear_Motor_Update(void)
     {
         target_mps = daoche_speed * GUANDAO_SPEED_TO_MPS;
     }
-    else if(conrtol_mode == YAOKONG)
-    {
-        // YAOKONG disabled: ignore remote speed input
-        target_mps = 0.0f;
-    }
-    else if(main_mode != Rack_Test_Mode)
-    {
-        rear_motor_stop();
-        return;
-    }
     else
     {
+        rear_motor_stop();
         return;
     }
 
@@ -146,6 +139,96 @@ static void Portion2_Dot_Matrix_Scan_Update(void)
     }
 }
 
+static void Portion2_Run_Mode_Key_Handle(void)
+{
+    static uint32 k4_start_ms = 0;
+    static uint8 k4_wait_release = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if(key1_flag) { key1_flag = 0; }
+    if(key2_flag) { key2_flag = 0; }
+    if(key3_flag)
+    {
+        key3_flag = 0;
+        voice_drive_action_stop();
+        portion2_run_stop();
+        out_v_l = 0.0f;
+        out_v_r = 0.0f;
+        out_servo = 0.0f;
+        rear_motor_stop();
+        Buzzer_check(50);
+    }
+    if(key4_flag)
+    {
+        key4_flag = 0;
+        voice_drive_action_stop();
+        portion2_run_stop();
+        out_v_l = 0.0f;
+        out_v_r = 0.0f;
+        out_servo = 0.0f;
+        rear_motor_stop();
+        portion2_record_enter_mode();
+        main_mode = Guandao_Portion2_Recode;
+        conrtol_mode = IDLE;
+        voice_inited = 0;
+        ips200_clear();
+        Buzzer_check(50);
+    }
+
+    // K4 long press has no run-mode action; short press returns to record mode.
+    if(gpio_get_level(KEY4) == 0)
+    {
+        if(k4_start_ms == 0) k4_start_ms = now_ms;
+        if(!k4_wait_release && (uint32)(now_ms - k4_start_ms) > 1500U)
+        {
+            k4_wait_release = 1;
+        }
+    }
+    else
+    {
+        k4_start_ms = 0;
+        k4_wait_release = 0;
+    }
+}
+
+static void Portion2_Run_Mode_UI_Update(void)
+{
+    static uint32 last_ui_ms = 0;
+    uint32 now_ui_ms = system_getval_ms();
+    if((uint32)(now_ui_ms - last_ui_ms) < 100U) return;
+    last_ui_ms = now_ui_ms;
+    ips200_show_string(X(1),  Y(0), "MODE: RUN");
+    ips200_show_string(X(1),  Y(1), "MOTOR: AUTO");
+    ips200_show_string(X(1),  Y(2), (voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE) ? "VOICE: RUN" : "VOICE: WAIT");
+    {
+        char buf[16];
+        uint8 cmd = offline_voice_get_last_cmd();
+        if(cmd == 0) sprintf(buf, "--"); else sprintf(buf, "0x%02X", (unsigned)cmd);
+        ips200_show_string(X(1),  Y(3), "CMD: ");
+        ips200_show_string(X(6),  Y(3), buf);
+    }
+    {
+        char routes[32];
+        int pos = 0;
+        routes[0] = '\0';
+        for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+        {
+            if(portion2_route_length[i] > 0 && pos < (int)sizeof(routes) - 3)
+            {
+                if(pos) routes[pos++] = ' ';
+                routes[pos++] = '1' + i;
+            }
+        }
+        routes[pos] = '\0';
+        ips200_show_string(X(1),  Y(4), "ROUTES: ");
+        ips200_show_string(X(9),  Y(4), routes[0] ? routes : "--");
+        if(portion2_run_reject_reason == 2 || portion2_run_reject_reason == 3)
+        {
+            ips200_show_string(X(1),  Y(5), "ROUTE EMPTY");
+        }
+    }
+}
+
 static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
 {
     portion2_run_stop();
@@ -155,10 +238,48 @@ static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
 static void Portion2_Ascii_Command_Execute(uint8 data)
 {
     static uint8 reverse_route_pending = 0;
+    static uint8 dump_route_pending = 0;
 
-    if(data == '-')
+    if(data == 'D')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 1;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        portion2_serial_dump_routes();
+    }
+    else if(data == 'T')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        portion2_serial_toggle_trace();
+    }
+    else if(data == 'S')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        voice_drive_action_stop();
+        portion2_run_stop();
+        out_v_l = 0.0f;
+        out_v_r = 0.0f;
+        out_servo = 0.0f;
+        rear_motor_stop();
+        uart_write_string(DEBUG_UART_INDEX, "[P2-RUN] stop\r\n");
+    }
+    else if(data == '-')
     {
         reverse_route_pending = 1;
+        dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
@@ -168,24 +289,34 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
-        voice_drive_action_stop();
-        if(reverse_route_pending && data >= '1' && data <= '5')
+        if(dump_route_pending)
         {
-            portion2_run_select_reverse_route(data - '1');
-        }
-        else if(reverse_route_pending && (data == '8' || data == '9'))
-        {
-            portion2_run_select_back_route(data - '1');
+            uart_write_string(DEBUG_UART_INDEX, "\r\n");
+            portion2_serial_dump_route(data - '1');
+            dump_route_pending = 0;
         }
         else
         {
-            portion2_run_select_route(data - '1');
+            voice_drive_action_stop();
+            if(reverse_route_pending && data >= '1' && data <= '5')
+            {
+                portion2_run_select_reverse_route(data - '1');
+            }
+            else if(reverse_route_pending && (data == '8' || data == '9'))
+            {
+                portion2_run_select_back_route(data - '1');
+            }
+            else
+            {
+                portion2_run_select_route(data - '1');
+            }
         }
         reverse_route_pending = 0;
     }
     else if(data >= 'A' && data <= 'H')
     {
         reverse_route_pending = 0;
+        dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
@@ -202,6 +333,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
     else if(data >= 'a' && data <= 'h')
     {
         reverse_route_pending = 0;
+        dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
@@ -218,6 +350,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
     else if(data >= 'I' && data <= 'P')
     {
         reverse_route_pending = 0;
+        dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
@@ -226,16 +359,27 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
     else if(data >= 'i' && data <= 'p')
     {
         reverse_route_pending = 0;
+        dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
         Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'i')));
+    }
+    else
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
     }
 }
 
 static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
 {
     (void)user_data;
+
+    if(main_mode != Guandao_Voice)
+    {
+        return;
+    }
 
     switch(cmd_id)
     {
@@ -405,14 +549,11 @@ int core0_main(void)
     cpu_wait_event_ready();                                                          
 
     Flash_Main_Read();                                                                  
+    portion2_record_mark_loaded_routes_saved();
 
-    Menu_Contral();                                                                      
-
-    if(main_mode == Guandao_Voice)
-    {
-        screen_init();
-        offline_voice_init(Portion2_Voice_Command_Handle, 0);
-    }
+    main_mode = Guandao_Portion2_Recode;
+    route_setting_choice = 1;
+    conrtol_mode = IDLE;
 
     Flash_Write_pid();                                                               
 
@@ -426,11 +567,15 @@ int core0_main(void)
 
         switch(main_mode)                                                    
         {
-            case Mode_IDLE:                                                   
-
-                break;
-
             case Guandao_Voice:                                             
+                if(!voice_inited)
+                {
+                    screen_init();
+                    offline_voice_init(Portion2_Voice_Command_Handle, 0);
+                    voice_inited = 1;
+                    ips200_clear();
+                }
+                Portion2_Run_Mode_Key_Handle();
                 offline_voice_poll();
                 Portion2_Serial_Command_Update();
                 Portion2_Dot_Matrix_Scan_Update();
@@ -443,48 +588,18 @@ int core0_main(void)
                 {
                     portion2_run_task();
                 }
+                Portion2_Run_Mode_UI_Update();
                 break;
 
             case Guandao_Portion2_Recode:
+                voice_inited = 0;
                 portion2_record_task();
-                break;
-
-            case Guandao_portion_3:                                     
-                guandao_trace(&INS);                                      
-                break;
-
-            case Rack_Test_Mode:
-                Rack_Test_Run();
-                break;
-
-            case YaoKong_Mode:
                 break;
 
             default : break;
 
         }
         Guandao_Rear_Motor_Update();
-
-            
-            if(main_mode == Guandao_portion_3)
-            {
-                static uint32 last_ui_ms = 0;
-                uint32 now_ui_ms = system_getval_ms();
-                if(now_ui_ms - last_ui_ms >= 100)
-                {
-                    last_ui_ms = now_ui_ms;
-                    ips200_show_string(X(1),  Y(8), "Idx");      ips200_show_int(X(6),  Y(8), portion_3.current_point_index, 4);
-                    ips200_show_string(X(12), Y(8), "Len");      ips200_show_int(X(17), Y(8), portion_3.length_index, 4);
-                    ips200_show_string(X(1),  Y(9), "D");        ips200_show_float(X(6),  Y(9), guandao_debug_distance, 3, 2);
-                    ips200_show_string(X(12), Y(9), "A");        ips200_show_float(X(16), Y(9), guandao_debug_angle_diff, 3, 1);
-                    ips200_show_string(X(1),  Y(10), "Reason");  ips200_show_int(X(10), Y(10), guandao_debug_stop_reason, 2);
-                    ips200_show_string(X(1),  Y(11), "VlVr");    ips200_show_float(X(7),  Y(11), out_v_l, 3, 1); ips200_show_float(X(15), Y(11), out_v_r, 3, 1);
-                    ips200_show_string(X(1),  Y(12), "TgtAct");  ips200_show_float(X(9),  Y(12), rear_motor_get_target_mps(), 2, 1); ips200_show_float(X(16), Y(12), rear_motor_get_speed_mps(), 2, 1);
-                    ips200_show_string(X(1),  Y(13), "PWM");     ips200_show_int(X(7),  Y(13), rear_motor_get_pwm(), 5);
-                    ips200_show_string(X(1),  Y(14), "Yaw");     ips200_show_float(X(7),  Y(14), Yaw_1, 4, 1);
-                    ips200_show_string(X(1),  Y(15), "XY");      ips200_show_float(X(5),  Y(15), portion_3.current_state.x, 3, 1); ips200_show_float(X(13), Y(15), portion_3.current_state.y, 3, 1);
-                }
-            }
 //                    ips200_show_int(X(10),  Y(13),conrtol_mode ,5);
 //                    ips200_show_float(X(10),  Y(12),angle_speed ,5 ,5);
 //                    VeerMoter_Set(10000);

@@ -67,6 +67,7 @@ void Flash_Read_pid(void)
         {
             control[j] = flash_union_buffer[i].int16_type;
         }
+        control[0] = 10;
         base_speed = (float)control[0];
         daoche_speed = (float)control[1];
         preview_spets = control[2];
@@ -88,6 +89,7 @@ void Flash_Write_pid(void)
     recode_threshold = speed_pid[3];
     persuit_threshold = speed_pid[4];
     final_dsts = speed_pid[5];
+    control[0] = 10;
     base_speed = (float)control[0];
     daoche_speed = (float)control[1];
     preview_spets = control[2];

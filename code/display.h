@@ -9,14 +9,8 @@
 #define CODE_DISPLAY_H_
 
 typedef enum{
-    Mode_IDLE,
-    Guandao_Recode_Mode,
-    Guandao_portion_1,
     Guandao_Voice,
-    Guandao_Portion2_Recode,
-    Guandao_portion_3,
-    Rack_Test_Mode,
-    YaoKong_Mode
+    Guandao_Portion2_Recode
 }Mode_Choice;
 
 extern Mode_Choice main_mode;
