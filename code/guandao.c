@@ -47,6 +47,8 @@ static uint16 portion1_finally_length = 0;
 static uint8 portion2_state_flag = 0;
 static uint8 portion2_route_saved_flag[PORTION2_ROUTE_COUNT] = {0};
 static uint8 portion2_serial_trace_enabled = 0;
+static int16 portion2_run_last_report_point = -1;
+static uint8 portion2_run_last_report_gps = 255;
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
 static uint32 portion2_record_k3_start_ms = 0;
@@ -88,6 +90,7 @@ static uint8 portion2_record_k4_wait_release = 0;
 #define PORTION3_FINAL_STOP_DIST       0.6f
 
 static int16 guandao_route_length(guandao_state *state);
+static state_t guandao_route_point(guandao_state *state, int index);
 static uint8 portion2_route_required_gps(uint8 route_id);
 
 static long portion2_serial_fixed100(float value)
@@ -137,6 +140,133 @@ static void portion2_serial_write_state_point(const char *prefix, uint8 route_id
     }
 }
 
+static void portion2_serial_write_gps_point(const char *prefix, uint8 route_id, uint8 point_index, GPS_state point)
+{
+    char line[176];
+    int pos = 0;
+    int32 lat7 = double_to_int32(point.lat);
+    int32 lon7 = double_to_int32(point.lon);
+
+    pos += sprintf(line,
+                   "%s route=%u gps=%u lat7=%ld lon7=%ld yaw=",
+                   prefix,
+                   (unsigned)(route_id + 1),
+                   (unsigned)point_index,
+                   (long)lat7,
+                   (long)lon7);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), point.theta);
+    pos += sprintf(&line[pos], " bind_pt=%d gps=%u/%u\r\n",
+                   (int)point.cheak_flag,
+                   (unsigned)portion2_route_gps_count[route_id],
+                   (unsigned)portion2_route_required_gps(route_id));
+    if(pos > 0)
+    {
+        uart_write_string(DEBUG_UART_INDEX, line);
+    }
+}
+
+static void portion2_serial_log_record_event(const char *event)
+{
+    char line[128];
+
+    sprintf(line,
+            "[P2-REC-%s] route=%u state=%u pts=%u/%u gps=%u/%u saved=%s\r\n",
+            event,
+            (unsigned)(portion2_record_route + 1),
+            (unsigned)portion2_record_state,
+            (unsigned)portion2_route_length[portion2_record_route],
+            (unsigned)PORTION2_ROUTE_MAX_POINTS,
+            (unsigned)portion2_route_gps_count[portion2_record_route],
+            (unsigned)portion2_route_required_gps(portion2_record_route),
+            portion2_route_saved_flag[portion2_record_route] ? "YES" : "NO");
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
+static uint8 portion2_run_gps_reached_count(void)
+{
+    uint8 count = 0;
+    int16 run_index = portion_2.current_point_index;
+    int16 route_len = guandao_route_length(&portion_2);
+
+    if(run_index >= route_len)
+    {
+        return (uint8)portion_2.gps_recode_length;
+    }
+
+    for(uint8 i = 0; i < portion_2.gps_recode_length && i < MAX_GPS_RECODE; i++)
+    {
+        if(run_index >= portion_2.recode_gpsmap[i].cheak_flag)
+        {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static void portion2_serial_log_run_point_event(uint8 force)
+{
+    int16 route_len = guandao_route_length(&portion_2);
+    int16 run_index = portion_2.current_point_index;
+    char line[176];
+    int pos = 0;
+    state_t target_point;
+
+    if(route_len <= 0) return;
+    if(run_index > route_len) run_index = route_len;
+    if(!force && run_index == portion2_run_last_report_point) return;
+    portion2_run_last_report_point = run_index;
+
+    if(run_index >= route_len)
+    {
+        sprintf(line,
+                "[P2-RUN-END] route=%u idx=%d/%d gps=%u/%d reason=%u\r\n",
+                (unsigned)(portion2_selected_route + 1),
+                (int)run_index,
+                (int)route_len,
+                (unsigned)portion2_run_gps_reached_count(),
+                (int)portion_2.gps_recode_length,
+                (unsigned)guandao_debug_stop_reason);
+        uart_write_string(DEBUG_UART_INDEX, line);
+        return;
+    }
+
+    target_point = guandao_route_point(&portion_2, run_index);
+    pos += sprintf(line,
+                   "[P2-RUN-PT] route=%u idx=%d/%d target_x=",
+                   (unsigned)(portion2_selected_route + 1),
+                   (int)run_index,
+                   (int)route_len);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), target_point.x);
+    pos += sprintf(&line[pos], " target_y=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), target_point.y);
+    pos += sprintf(&line[pos], " dist=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_distance);
+    pos += sprintf(&line[pos], " gps=%u/%d reason=%u\r\n",
+                   (unsigned)portion2_run_gps_reached_count(),
+                   (int)portion_2.gps_recode_length,
+                   (unsigned)guandao_debug_stop_reason);
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
+static void portion2_serial_log_run_gps_event(uint8 force)
+{
+    uint8 gps_done = portion2_run_gps_reached_count();
+    char line[128];
+
+    if(!force && gps_done == portion2_run_last_report_gps) return;
+    portion2_run_last_report_gps = gps_done;
+
+    sprintf(line,
+            "[P2-RUN-GPS] route=%u gps=%u/%d idx=%d/%d\r\n",
+            (unsigned)(portion2_selected_route + 1),
+            (unsigned)gps_done,
+            (int)portion_2.gps_recode_length,
+            (int)portion_2.current_point_index,
+            (int)guandao_route_length(&portion_2));
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
 static void portion2_serial_log_run(void)
 {
     static uint32 last_ms = 0;
@@ -153,11 +283,13 @@ static void portion2_serial_log_run(void)
 
     route_len = (uint16)guandao_route_length(&portion_2);
     pos += sprintf(line,
-                   "[P2-RUN] route=%u state=%u idx=%d/%u x=",
+                   "[P2-RUN] route=%u state=%u idx=%d/%u gps=%u/%d x=",
                    (unsigned)(portion2_selected_route + 1),
                    (unsigned)portion2_state_flag,
                    portion_2.current_point_index,
-                   (unsigned)route_len);
+                   (unsigned)route_len,
+                   (unsigned)portion2_run_gps_reached_count(),
+                   (int)portion_2.gps_recode_length);
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion_2.current_state.x);
     pos += sprintf(&line[pos], " y=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion_2.current_state.y);
@@ -1126,6 +1258,10 @@ void portion2_serial_dump_route(uint8 route_id)
     {
         portion2_serial_write_state_point("[P2-DUMP]", route_id, i, passage.recode_map[offset + i]);
     }
+    for(uint8 i = 0; i < portion2_route_gps_count[route_id] && i < portion2_route_required_gps(route_id); i++)
+    {
+        portion2_serial_write_gps_point("[P2-DUMP-GPS]", route_id, i, passage.recode_gpsmap[portion2_route_gps_offset(route_id) + i]);
+    }
 
     uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] route end\r\n");
 }
@@ -1186,6 +1322,7 @@ static void portion2_record_gps_point(void)
     portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
     portion2_gps_auto_has_point[portion2_record_route] = 1;
     portion2_route_saved_flag[portion2_record_route] = 0;
+    portion2_serial_write_gps_point("[P2-REC-GPS]", portion2_record_route, gps_count, passage.recode_gpsmap[gps_index]);
     Buzzer_check(30);
 }
 
@@ -1376,12 +1513,14 @@ void portion2_record_task(void)
         portion2_route_gps_count[portion2_record_route] = 0;
         portion2_gps_auto_has_point[portion2_record_route] = 0;
         portion2_route_saved_flag[portion2_record_route] = 0;
+        portion2_serial_log_record_event("CLEAR");
         Buzzer_check(80);
     }
     if(k2_long)
     {
         Flash_Write_passage_points();
         portion2_route_saved_flag[portion2_record_route] = (portion2_route_length[portion2_record_route] > 0) ? 1 : 0;
+        portion2_serial_log_record_event("SAVE");
         Buzzer_check(150);
     }
     if(k3_long)
@@ -1398,11 +1537,13 @@ void portion2_record_task(void)
     if(k1_short && portion2_record_state != 1)
     {
         if(portion2_record_route > 0) portion2_record_route--;
+        portion2_serial_log_record_event("SELECT");
         Buzzer_check(20);
     }
     if(k2_short && portion2_record_state != 1)
     {
         if(portion2_record_route + 1 < PORTION2_ROUTE_COUNT) portion2_record_route++;
+        portion2_serial_log_record_event("SELECT");
         Buzzer_check(20);
     }
     if(k4_short)
@@ -1436,6 +1577,7 @@ void portion2_record_task(void)
                 portion2_record_point();
                 portion2_auto_record_gps_point();
                 portion2_record_state = 1;
+                portion2_serial_log_record_event("START");
                 Buzzer_check(50);
             }
             break;
@@ -1446,6 +1588,7 @@ void portion2_record_task(void)
             if(k3_short)
             {
                 portion2_record_state = 2;
+                portion2_serial_log_record_event("STOP");
                 Buzzer_check(50);
             }
             if(key2_flag)
@@ -1458,6 +1601,7 @@ void portion2_record_task(void)
                         portion2_record_route++;
                     }
                     portion2_record_state = 2;
+                    portion2_serial_log_record_event("NEXT");
                     Buzzer_check(100);
                 }
                 else
@@ -1642,10 +1786,16 @@ void portion2_run_task(void)
                 }
             }
             guandao_build_smooth_plan(&portion_2);
+            portion2_run_last_report_point = -1;
+            portion2_run_last_report_gps = 255;
             portion2_state_flag = 2;
+            portion2_serial_log_run_point_event(1);
+            portion2_serial_log_run_gps_event(1);
             break;
         case 2:
             guandao_trace_direct(&portion_2);
+            portion2_serial_log_run_point_event(0);
+            portion2_serial_log_run_gps_event(0);
             portion2_serial_log_run();
             if(portion_2.current_point_index >= guandao_route_length(&portion_2))
             {
