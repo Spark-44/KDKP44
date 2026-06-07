@@ -1301,7 +1301,11 @@ void portion2_record_task(void)
 
     if(portion2_record_route >= PORTION2_ROUTE_COUNT)
     {
-        portion2_record_state = 3;
+        portion2_record_route = PORTION2_ROUTE_COUNT - 1;
+        if(portion2_record_state != 1)
+        {
+            portion2_record_state = 2;
+        }
     }
 
     now_ms = system_getval_ms();
@@ -1449,35 +1453,17 @@ void portion2_record_task(void)
                 key2_flag = 0;
                 if(portion2_route_gps_count[portion2_record_route] >= portion2_route_required_gps(portion2_record_route))
                 {
-                    portion2_record_route++;
-                    portion2_record_state = (portion2_record_route >= PORTION2_ROUTE_COUNT) ? 3 : 2;
+                    if(portion2_record_route + 1 < PORTION2_ROUTE_COUNT)
+                    {
+                        portion2_record_route++;
+                    }
+                    portion2_record_state = 2;
                     Buzzer_check(100);
                 }
                 else
                 {
                     Buzzer_check(20);
                 }
-            }
-            break;
-        case 3:
-            out_v_l = 0;
-            out_v_r = 0;
-            out_servo = 0;
-            if(k3_short)
-            {
-                portion2_record_route = 0;
-                guandao_state_init(&passage);
-                passage.current_state.theta = Yaw_1;
-                Encoder_Get(&guandao_ecd);
-                passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
-                portion2_route_length[portion2_record_route] = 0;
-                portion2_route_gps_count[portion2_record_route] = 0;
-                portion2_gps_auto_has_point[portion2_record_route] = 0;
-                portion2_route_saved_flag[portion2_record_route] = 0;
-                portion2_record_point();
-                portion2_auto_record_gps_point();
-                portion2_record_state = 1;
-                Buzzer_check(50);
             }
             break;
         default:
@@ -1494,7 +1480,6 @@ void portion2_record_task(void)
         case 0: ips200_show_string(X(9), Y(2), "IDLE "); break;
         case 1: ips200_show_string(X(9), Y(2), "RECORD"); break;
         case 2: ips200_show_string(X(9), Y(2), "WAIT "); break;
-        case 3: ips200_show_string(X(9), Y(2), "DONE "); break;
         default: ips200_show_string(X(9), Y(2), "--   "); break;
     }
     ips200_show_string(X(1), Y(3), "PTS: ");

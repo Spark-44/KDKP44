@@ -29,11 +29,6 @@ if($guandaoC -match "void\s+portion2_record_task\s*\(\s*void\s*\)\s*\{([\s\S]*?)
 {
     $recordTaskBody = $Matches[1]
 }
-$recordDoneCaseBody = ""
-if($recordTaskBody -match "case\s+3\s*:\s*([\s\S]*?)\r?\n\s*break\s*;\s*\r?\n\s*default\s*:")
-{
-    $recordDoneCaseBody = $Matches[1]
-}
 $sleepCaseBody = ""
 if($cpu0 -match "case\s+OFFLINE_VOICE_CMD_SLEEP\s*:\s*([\s\S]*?)\r?\n\s*break\s*;")
 {
@@ -63,14 +58,15 @@ $checks = @(
     @{ Name = "run motor enable gate removed"; Pass = $cpu0 -notmatch "run_motor_enabled" },
     @{ Name = "run UI no longer shows motor enable"; Pass = $cpu0 -notmatch "MOTOR:\s*ON|MOTOR:\s*OFF|K1 MOTOR" },
     @{ Name = "voice commands ignored outside run mode"; Pass = $cpu0 -match "static\s+void\s+Portion2_Voice_Command_Handle[\s\S]*?if\s*\(\s*main_mode\s*!=\s*Guandao_Voice\s*\)[\s\S]*?return\s*;" },
-    @{ Name = "record DONE allows K3 restart"; Pass = $guandaoC -match "case\s+3\s*:[\s\S]*?if\s*\(\s*k3_short\s*\)[\s\S]*?portion2_record_route\s*=\s*0\s*;[\s\S]*?portion2_record_point\s*\(\s*\)\s*;[\s\S]*?portion2_record_state\s*=\s*1\s*;[\s\S]*?break\s*;" },
+    @{ Name = "record DONE state removed"; Pass = $recordTaskBody -ne "" -and $recordTaskBody -notmatch "case\s+3\s*:" -and $guandaoC -notmatch '"DONE\s*"' },
+    @{ Name = "record route overflow clamps to last route and WAIT"; Pass = $recordTaskBody -match "if\s*\(\s*portion2_record_route\s*>=\s*PORTION2_ROUTE_COUNT\s*\)\s*\{[\s\S]*?portion2_record_route\s*=\s*PORTION2_ROUTE_COUNT\s*-\s*1\s*;[\s\S]*?portion2_record_state\s*=\s*2\s*;" },
     @{ Name = "record key state reset API declared"; Pass = $guandaoH -match "void\s+portion2_record_enter_mode\s*\(\s*void\s*\)" },
     @{ Name = "record key state reset API implemented"; Pass = $guandaoC -match "void\s+portion2_record_enter_mode\s*\(\s*void\s*\)[\s\S]*?portion2_record_key_state_reset\s*\(\s*\)" },
     @{ Name = "record key reset does not clear route data"; Pass = $recordKeyResetBody -ne "" -and $recordKeyResetBody -notmatch "portion2_route_length\s*\[" -and $recordKeyResetBody -notmatch "portion2_route_gps_count\s*\[" -and $recordKeyResetBody -notmatch "guandao_state_init" },
     @{ Name = "record K4 enters run through shared transition"; Pass = $guandaoC -match "if\s*\(\s*k4_short\s*\)\s*\{[\s\S]*?portion2_record_key_state_reset\s*\(\s*\)[\s\S]*?main_mode\s*=\s*Guandao_Voice" },
     @{ Name = "record K4 accepts global key event fallback"; Pass = $guandaoC -match "if\s*\(\s*key4_flag\s*\)\s*\{[\s\S]*?key4_flag\s*=\s*0\s*;[\s\S]*?k4_short\s*=\s*1" },
     @{ Name = "run K4 returns to record through shared transition"; Pass = $cpu0 -match "if\s*\(\s*key4_flag\s*\)[\s\S]*?portion2_record_enter_mode\s*\(\s*\)" },
-    @{ Name = "record DONE K4 no longer saves"; Pass = $recordDoneCaseBody -ne "" -and $recordDoneCaseBody -notmatch "key4_flag" -and $recordDoneCaseBody -notmatch "Flash_Write_passage_points\s*\(\s*\)" },
+    @{ Name = "last route completion stays in WAIT"; Pass = $recordTaskBody -match "if\s*\(\s*portion2_record_route\s*\+\s*1\s*<\s*PORTION2_ROUTE_COUNT\s*\)[\s\S]*?portion2_record_route\s*\+\+[\s\S]*?portion2_record_state\s*=\s*2" -and $recordTaskBody -notmatch "portion2_record_state\s*=\s*\([^;\r\n]*PORTION2_ROUTE_COUNT[^;\r\n]*\)\s*\?\s*3\s*:\s*2" },
     @{ Name = "run main UI does not overwrite lower debug rows"; Pass = $runUi -ne "" -and $runUi -notmatch "ips200_show_string\s*\(\s*X\s*\(\s*1\s*\)\s*,\s*Y\s*\(\s*1[2-5]\s*\)" },
     @{ Name = "route run completeness helper exists"; Pass = $guandaoC -match "static\s+uint8\s+portion2_route_ready_for_run\s*\(\s*uint8\s+route_id\s*\)" },
     @{ Name = "route run requires enough inertial points"; Pass = $guandaoC -match "portion2_route_length\s*\[\s*route_id\s*\]\s*<\s*required" },
