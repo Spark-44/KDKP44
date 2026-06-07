@@ -92,6 +92,7 @@ $checks = @(
     @{ Name = "smooth pursuit rate limits steering target"; Pass = $guandaoC -match "last_target_steering" -and $guandaoC -match "steer_delta_limit" -and $guandaoC -match "last_steer_limit_ms" },
     @{ Name = "smooth pursuit reduces speed from preview angle"; Pass = $guandaoC -match "fabsf\s*\(\s*preview_alpha2\s*\)\s*>\s*GUANDAO_CURVE_TRIGGER_ANGLE" -and $guandaoC -match "curve_scale" },
     @{ Name = "smooth pursuit outputs limited target steering"; Pass = $guandaoC -match "\*out_servo\s*=\s*-target_steering" },
+    @{ Name = "smooth pursuit steering command limit is 25 degrees"; Pass = $guandaoC -match "GUANDAO_STEERING_CMD_LIMIT\s+25\.0f" -and $guandaoC -match "GUANDAO_HIGH_SPEED_CMD_LIMIT\s+25\.0f" -and $guandaoC -match "GUANDAO_VERY_HIGH_CMD_LIMIT\s+25\.0f" },
     @{ Name = "curve speed can fall below base speed"; Pass = $guandaoH -match "MIN_SPEED\s+4\.0f" },
     @{ Name = "portion2 reuses portion3 trace standard"; Pass = $guandaoC -match "static\s+uint8\s+guandao_uses_portion3_trace_standard\s*\(\s*guandao_state\s+\*state\s*\)" -and $guandaoC -match "state\s*==\s*&portion_2" },
     @{ Name = "portion3 standard arrival threshold"; Pass = $guandaoC -match "PORTION3_PURSUIT_THRESHOLD\s+0\.25f" -and $guandaoC -match "guandao_uses_portion3_trace_standard\s*\(\s*state\s*\)[\s\S]*?arrive_threshold\s*=\s*PORTION3_PURSUIT_THRESHOLD" },
