@@ -87,7 +87,7 @@ static uint8 portion2_record_k4_wait_release = 0;
 #define PORTION1_PARK_CRAWL_SPEED      3.0f
 #define PORTION1_END_MIN_SPEED         3.0f
 #define PORTION3_PURSUIT_THRESHOLD     0.25f
-#define PORTION3_FINAL_STOP_DIST       0.6f
+#define PORTION3_FINAL_STOP_DIST       0.1f
 
 static int16 guandao_route_length(guandao_state *state);
 static state_t guandao_route_point(guandao_state *state, int index);

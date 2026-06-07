@@ -100,7 +100,7 @@ $checks = @(
     @{ Name = "curve speed can fall below base speed"; Pass = $guandaoH -match "MIN_SPEED\s+4\.0f" },
     @{ Name = "portion2 reuses portion3 trace standard"; Pass = $guandaoC -match "static\s+uint8\s+guandao_uses_portion3_trace_standard\s*\(\s*guandao_state\s+\*state\s*\)" -and $guandaoC -match "state\s*==\s*&portion_2" },
     @{ Name = "portion3 standard arrival threshold"; Pass = $guandaoC -match "PORTION3_PURSUIT_THRESHOLD\s+0\.25f" -and $guandaoC -match "guandao_uses_portion3_trace_standard\s*\(\s*state\s*\)[\s\S]*?arrive_threshold\s*=\s*PORTION3_PURSUIT_THRESHOLD" },
-    @{ Name = "portion3 standard final stop"; Pass = $guandaoC -match "PORTION3_FINAL_STOP_DIST\s+0\.6f" -and $guandaoC -match "guandao_uses_portion3_trace_standard\s*\(\s*state\s*\)[\s\S]*?dist_to_final\s*<=\s*PORTION3_FINAL_STOP_DIST" },
+    @{ Name = "portion3 standard final stop"; Pass = $guandaoC -match "PORTION3_FINAL_STOP_DIST\s+0\.1f" -and $guandaoC -match "guandao_uses_portion3_trace_standard\s*\(\s*state\s*\)[\s\S]*?dist_to_final\s*<=\s*PORTION3_FINAL_STOP_DIST" },
     @{ Name = "portion3 standard disables yaw correction"; Pass = $guandaoC -match "case\s+2\s*:\s*[\r\n\s]*break\s*;" },
     @{ Name = "portion3 standard endpoint slowdown after curve slowdown"; Pass = $guandaoC -match "curve_scale[\s\S]*?dist_to_final\s*<\s*final_dsts[\s\S]*?v_center\s*=\s*base_speed\s*\*\s*\(dist_to_final\s*/\s*final_dsts\)" },
     @{ Name = "main modes only include record and run"; Pass = $displayH -match "typedef\s+enum\s*\{\s*Guandao_Voice\s*,\s*Guandao_Portion2_Recode\s*\}\s*Mode_Choice\s*;" },
