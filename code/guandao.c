@@ -88,6 +88,7 @@ static uint8 portion2_record_k4_wait_release = 0;
 #define PORTION1_END_MIN_SPEED         3.0f
 #define PORTION3_PURSUIT_THRESHOLD     0.08f
 #define PORTION3_FINAL_STOP_DIST       0.1f
+#define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.6f
 
 static int16 guandao_clamp_length(int16 length);
 static int16 guandao_route_length(guandao_state *state);
@@ -961,6 +962,22 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    }
 
    if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
+   if(state == &portion_2)
+   {
+       int16 raw_length = guandao_clamp_length(state->length_index);
+       int16 raw_point = portion2_raw_point_from_plan_index(state->current_point_index);
+       if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
+       {
+           state->current_point_index = route_length;
+           guandao_debug_stop_reason = 8;
+           * out_v_l = 0;
+           * out_v_r = 0;
+           *out_servo = 0;
+           last_target_steering = 0.0f;
+           last_steer_limit_ms = 0;
+           return;
+       }
+   }
    if(guandao_uses_portion3_trace_standard(state) && state->current_point_index >= route_length - 1
            && dist_to_final <= PORTION3_FINAL_STOP_DIST)
    {
