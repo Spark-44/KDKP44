@@ -3,12 +3,17 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $guandaoC = Get-Content -Raw -Path (Join-Path $root "code\guandao.c")
 $guandaoH = Get-Content -Raw -Path (Join-Path $root "code\guandao.h")
+$imuC = Get-Content -Raw -Path (Join-Path $root "code\IMU.c")
+$imuH = Get-Content -Raw -Path (Join-Path $root "code\IMU.h")
 $cpu0 = Get-Content -Raw -Path (Join-Path $root "user\cpu0_main.c")
 $controlH = Get-Content -Raw -Path (Join-Path $root "code\control.h")
 $displayC = Get-Content -Raw -Path (Join-Path $root "code\display.c")
 $displayH = Get-Content -Raw -Path (Join-Path $root "code\display.h")
 $flashC = Get-Content -Raw -Path (Join-Path $root "code\flash.c")
 $fixedActionC = Get-Content -Raw -Path (Join-Path $root "code\subject_2_fixed_action.c")
+$commonHeadfile = Get-Content -Raw -Path (Join-Path $root "libraries\zf_common\zf_common_headfile.h")
+$debugCodeSubdirMkPath = Join-Path $root "Debug\code\subdir.mk"
+$debugCodeSubdirMk = if(Test-Path $debugCodeSubdirMkPath) { Get-Content -Raw -Path $debugCodeSubdirMkPath } else { "" }
 $runUi = ""
 if($cpu0 -match "static\s+void\s+Portion2_Run_Mode_UI_Update\s*\(\s*void\s*\)\s*\{([\s\S]*?)\r?\n\}\r?\n\r?\nstatic\s+void\s+Portion2_Fixed_Action_Start")
 {
@@ -98,7 +103,13 @@ $checks = @(
     @{ Name = "record mode uses IDLE control"; Pass = $cpu0 -match "main_mode\s*=\s*Guandao_Portion2_Recode\s*;\s*[\r\n\s]*route_setting_choice\s*=\s*1\s*;\s*[\r\n\s]*conrtol_mode\s*=\s*IDLE\s*;" -and $cpu0 -notmatch "conrtol_mode\s*=\s*YAOKONG" },
     @{ Name = "control modes keep only active controls"; Pass = $controlH -match "typedef\s+enum\s*\{\s*IDLE\s*,\s*GUANDAO\s*,\s*DAOCHE\s*\}\s*MOTER_control_mode\s*;" },
     @{ Name = "removed control modes are not referenced"; Pass = ($cpu0 + $displayC + $controlH) -notmatch "\bYAOKONG\b|\bRACK_TEST\b|\bGPS\b" },
-    @{ Name = "old record preview branch removed"; Pass = $guandaoC -notmatch "main_mode\s*==\s*Guandao_Recode_Mode" }
+    @{ Name = "old record preview branch removed"; Pass = $guandaoC -notmatch "main_mode\s*==\s*Guandao_Recode_Mode" },
+    @{ Name = "IMU_2 source files removed"; Pass = -not (Test-Path (Join-Path $root "code\IMU_2.c")) -and -not (Test-Path (Join-Path $root "code\IMU_2.h")) },
+    @{ Name = "IMU_2 removed from generated build list"; Pass = $debugCodeSubdirMk -ne "" -and $debugCodeSubdirMk -notmatch "IMU_2" },
+    @{ Name = "common headfile includes merged IMU"; Pass = $commonHeadfile -match '#include\s+"IMU\.h"' -and $commonHeadfile -notmatch '#include\s+"IMU_2\.h"' },
+    @{ Name = "merged IMU keeps AHRS public API"; Pass = $imuH -match "typedef\s+struct\s*\{[\s\S]*?\}\s*euler_param_t\s*;" -and $imuH -match "extern\s+euler_param_t\s+euler_angle" -and $imuH -match "void\s+Init_Gyro_Offset\s*\(\s*void\s*\)" -and $imuH -match "void\s+Get_Angles_ICM\s*\(\s*void\s*\)" },
+    @{ Name = "merged IMU keeps AHRS implementation"; Pass = $imuC -match "void\s+Init_Gyro_Offset\s*\(\s*void\s*\)" -and $imuC -match "void\s+Get_Angles_ICM\s*\(\s*void\s*\)" -and $imuC -match "static\s+void\s+Update_AHRS_ICM" -and $imuC -match "euler_param_t\s+euler_angle" },
+    @{ Name = "merged IMU preserves active Yaw_1 flow"; Pass = $imuC -match "float\s+Yaw_1\s*=\s*0" -and $imuC -match "void\s+IMU_GetValues\s*\(\s*void\s*\)" -and $imuC -match "imu963ra_gyro_z" }
 )
 
 $failed = @($checks | Where-Object { -not $_.Pass })
