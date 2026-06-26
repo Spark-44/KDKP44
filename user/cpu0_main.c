@@ -141,10 +141,6 @@ static void Portion2_Dot_Matrix_Scan_Update(void)
 
 static void Portion2_Run_Mode_Key_Handle(void)
 {
-    static uint32 k4_start_ms = 0;
-    static uint8 k4_wait_release = 0;
-    uint32 now_ms = system_getval_ms();
-
     if(key1_flag) { key1_flag = 0; }
     if(key2_flag) { key2_flag = 0; }
     if(key3_flag)
@@ -158,36 +154,21 @@ static void Portion2_Run_Mode_Key_Handle(void)
         rear_motor_stop();
         Buzzer_check(50);
     }
-    if(key4_flag)
+    if(portion2_mode_k4_short_event())
     {
-        key4_flag = 0;
         voice_drive_action_stop();
         portion2_run_stop();
         out_v_l = 0.0f;
         out_v_r = 0.0f;
         out_servo = 0.0f;
         rear_motor_stop();
+        portion2_mode_key_transition_lock();
         portion2_record_enter_mode();
         main_mode = Guandao_Portion2_Recode;
         conrtol_mode = IDLE;
         voice_inited = 0;
         ips200_clear();
         Buzzer_check(50);
-    }
-
-    // K4 long press has no run-mode action; short press returns to record mode.
-    if(gpio_get_level(KEY4) == 0)
-    {
-        if(k4_start_ms == 0) k4_start_ms = now_ms;
-        if(!k4_wait_release && (uint32)(now_ms - k4_start_ms) > 1500U)
-        {
-            k4_wait_release = 1;
-        }
-    }
-    else
-    {
-        k4_start_ms = 0;
-        k4_wait_release = 0;
     }
 }
 

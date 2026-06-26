@@ -57,6 +57,8 @@ static uint8 portion2_record_k1_wait_release = 0;
 static uint8 portion2_record_k2_wait_release = 0;
 static uint8 portion2_record_k3_wait_release = 0;
 static uint8 portion2_record_k4_wait_release = 0;
+static uint32 portion2_mode_k4_start_ms = 0;
+static uint8 portion2_mode_k4_wait_release = 0;
 
 #define GUANDAO_START_SEARCH_POINTS    10
 #define GUANDAO_TRACE_SEARCH_POINTS    8
@@ -1464,6 +1466,58 @@ static void portion2_record_key_state_reset(void)
     key4_flag = 0;
 }
 
+void portion2_mode_key_transition_lock(void)
+{
+    portion2_mode_k4_start_ms = 0;
+    portion2_mode_k4_wait_release = 1;
+    portion2_record_k4_start_ms = 0;
+    portion2_record_k4_wait_release = 0;
+    key4_flag = 0;
+}
+
+uint8 portion2_mode_k4_short_event(void)
+{
+    uint32 now_ms = system_getval_ms();
+    uint8 key_down = (gpio_get_level(KEY4) == 0);
+    uint8 release_event = 0;
+    uint8 short_event = 0;
+
+    if(key4_flag)
+    {
+        key4_flag = 0;
+        release_event = 1;
+    }
+
+    if(portion2_mode_k4_wait_release)
+    {
+        if(!key_down)
+        {
+            portion2_mode_k4_wait_release = 0;
+            portion2_mode_k4_start_ms = 0;
+        }
+        return 0;
+    }
+
+    if(key_down)
+    {
+        if(portion2_mode_k4_start_ms == 0) portion2_mode_k4_start_ms = now_ms;
+        if((uint32)(now_ms - portion2_mode_k4_start_ms) > 1500U)
+        {
+            portion2_mode_k4_wait_release = 1;
+        }
+    }
+    else
+    {
+        if(portion2_mode_k4_start_ms != 0 || release_event)
+        {
+            short_event = 1;
+        }
+        portion2_mode_k4_start_ms = 0;
+    }
+
+    return short_event;
+}
+
 void portion2_record_enter_mode(void)
 {
     portion2_record_key_state_reset();
@@ -1535,24 +1589,7 @@ void portion2_record_task(void)
         portion2_record_k3_start_ms = 0; portion2_record_k3_wait_release = 0;
     }
 
-    if(gpio_get_level(KEY4) == 0)
-    {
-        if(portion2_record_k4_start_ms == 0) portion2_record_k4_start_ms = now_ms;
-        if(!portion2_record_k4_wait_release && (uint32)(now_ms - portion2_record_k4_start_ms) > 1500U)
-        {
-            k4_long = 1; portion2_record_k4_wait_release = 1;
-        }
-    }
-    else
-    {
-        if(portion2_record_k4_start_ms != 0 && !portion2_record_k4_wait_release) k4_short = 1;
-        portion2_record_k4_start_ms = 0; portion2_record_k4_wait_release = 0;
-    }
-    if(key4_flag)
-    {
-        key4_flag = 0;
-        k4_short = 1;
-    }
+    k4_short = portion2_mode_k4_short_event();
 
     if(k1_long)
     {
@@ -1595,6 +1632,7 @@ void portion2_record_task(void)
     }
     if(k4_short)
     {
+        portion2_mode_key_transition_lock();
         portion2_record_key_state_reset();
         main_mode = Guandao_Voice;
         route_setting_choice = 3;

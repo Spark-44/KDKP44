@@ -148,6 +148,8 @@ void portion2_record_reset(void);
 void portion2_record_enter_mode(void);
 void portion2_record_mark_loaded_routes_saved(void);
 void portion2_record_task(void);
+uint8 portion2_mode_k4_short_event(void);
+void portion2_mode_key_transition_lock(void);
 void portion2_run_select_route(uint8 route_id);
 void portion2_run_select_reverse_route(uint8 route_id);
 void portion2_run_select_back_route(uint8 route_id);
