@@ -95,9 +95,10 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define PORTION2_FINAL_YAW_ALIGN_SPEED 3.5f
 #define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 25.0f
 
-static int16 guandao_clamp_length(int16 length);
+static int16 guandao_clamp_length(int length);
 static int16 guandao_route_length(guandao_state *state);
 static state_t guandao_route_point(guandao_state *state, int index);
+static float guandao_normalize_angle(float angle);
 static uint8 portion2_route_required_gps(uint8 route_id);
 
 static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_length, int16 plan_length)
@@ -211,7 +212,7 @@ static void portion2_serial_log_record_event(const char *event)
 static uint8 portion2_run_gps_reached_count(void)
 {
     uint8 count = 0;
-    int16 run_index = portion_2.current_point_index;
+    int16 run_index = guandao_clamp_length(portion_2.current_point_index);
     int16 route_len = guandao_route_length(&portion_2);
 
     if(run_index >= route_len)
@@ -233,7 +234,7 @@ static uint8 portion2_run_gps_reached_count(void)
 static void portion2_serial_log_run_point_event(uint8 force)
 {
     int16 route_len = guandao_route_length(&portion_2);
-    int16 run_index = portion_2.current_point_index;
+    int16 run_index = guandao_clamp_length(portion_2.current_point_index);
     char line[256];
     int pos = 0;
     state_t target_point;
@@ -306,7 +307,7 @@ static void portion2_serial_log_run_gps_event(uint8 force)
             (int)portion_2.gps_recode_length,
             (int)portion_2.current_point_index,
             (int)guandao_route_length(&portion_2),
-            (int)portion2_raw_point_from_plan_index(portion_2.current_point_index),
+            (int)portion2_raw_point_from_plan_index(guandao_clamp_length(portion_2.current_point_index)),
             (int)guandao_clamp_length(portion_2.length_index));
     uart_write_string(DEBUG_UART_INDEX, line);
 }
@@ -356,7 +357,7 @@ static void portion2_serial_log_run(void)
     }
 }
 
-static int16 guandao_clamp_length(int16 length)
+static int16 guandao_clamp_length(int length)
 {
     if(length < 0) return 0;
     if(length > MAX_LENGTH_INDEX) return MAX_LENGTH_INDEX;
@@ -1030,7 +1031,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    if(state == &portion_2)
    {
        int16 raw_length = guandao_clamp_length(state->length_index);
-       int16 raw_point = portion2_raw_point_from_plan_index(state->current_point_index);
+       int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
        if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
        {
            if(!portion2_final_yaw_align(final_point, out_v_l, out_v_r, out_servo))
