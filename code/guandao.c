@@ -106,7 +106,6 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 25.0f
 #define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 5000U
 #define PORTION2_FINAL_YAW_ALIGN_MAX_DIST 0.8f
-#define PORTION2_FINAL_YAW_MISMATCH_REASON 11U
 
 static int16 guandao_clamp_length(int length);
 static int16 guandao_route_length(guandao_state *state);
@@ -425,23 +424,34 @@ static float guandao_normalize_angle(float angle)
 
 static uint8 portion2_final_yaw_align(state_t final_point, float dist_to_final, float *out_v_l, float *out_v_r, float *out_servo)
 {
+    uint32 now_ms;
     float yaw_error = guandao_normalize_angle(final_point.theta - Yaw_1);
 
-    (void)dist_to_final;
     guandao_debug_angle_diff = yaw_error;
-    portion2_final_yaw_align_start_ms = 0;
-    *out_v_l = 0.0f;
-    *out_v_r = 0.0f;
-    *out_servo = 0.0f;
-
     if(fabsf(yaw_error) <= PORTION2_FINAL_YAW_TOLERANCE_DEG)
     {
-        guandao_debug_stop_reason = 8;
+        portion2_final_yaw_align_start_ms = 0;
         return 1;
     }
 
-    guandao_debug_stop_reason = PORTION2_FINAL_YAW_MISMATCH_REASON;
-    return 1;
+    now_ms = system_getval_ms();
+    if(portion2_final_yaw_align_start_ms == 0)
+    {
+        portion2_final_yaw_align_start_ms = now_ms;
+    }
+    if((uint32)(now_ms - portion2_final_yaw_align_start_ms) >= PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS
+            || dist_to_final > PORTION2_FINAL_YAW_ALIGN_MAX_DIST)
+    {
+        portion2_final_yaw_align_start_ms = 0;
+        guandao_debug_stop_reason = 10;
+        return 1;
+    }
+
+    guandao_debug_stop_reason = 9;
+    *out_v_l = PORTION2_FINAL_YAW_ALIGN_SPEED;
+    *out_v_r = PORTION2_FINAL_YAW_ALIGN_SPEED;
+    *out_servo = (yaw_error > 0.0f) ? -PORTION2_FINAL_YAW_ALIGN_STEER_DEG : PORTION2_FINAL_YAW_ALIGN_STEER_DEG;
+    return 0;
 }
 
 static void portion2_align_route_to_current_yaw(float run_start_theta)
@@ -1137,7 +1147,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
                return;
            }
            state->current_point_index = route_length;
-           if(guandao_debug_stop_reason != 10 && guandao_debug_stop_reason != PORTION2_FINAL_YAW_MISMATCH_REASON) guandao_debug_stop_reason = 8;
+           if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
            * out_v_l = 0;
            * out_v_r = 0;
            *out_servo = 0;
@@ -1156,7 +1166,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
            return;
        }
        state->current_point_index = route_length;
-       if(guandao_debug_stop_reason != 10 && guandao_debug_stop_reason != PORTION2_FINAL_YAW_MISMATCH_REASON) guandao_debug_stop_reason = 8;
+       if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
        * out_v_l = 0;
        * out_v_r = 0;
        *out_servo = 0;
