@@ -101,6 +101,8 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define PORTION3_PURSUIT_THRESHOLD     0.08f
 #define PORTION3_FINAL_STOP_DIST       0.1f
 #define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.6f
+#define PORTION2_FINAL_MISSED_STOP_DIST 1.5f
+#define PORTION2_FINAL_MISSED_STOP_REASON 12U
 #define PORTION2_FINAL_YAW_TOLERANCE_DEG 8.0f
 #define PORTION2_FINAL_YAW_ALIGN_SPEED 2.0f
 #define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 25.0f
@@ -1138,6 +1140,20 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    {
        int16 raw_length = guandao_clamp_length(state->length_index);
        int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
+       if(raw_length > 0 && raw_point >= raw_length - 1
+               && state->current_point_index >= route_length - 1
+               && dist_to_final > PORTION2_FINAL_RAW_POINT_STOP_DIST
+               && dist_to_final <= PORTION2_FINAL_MISSED_STOP_DIST)
+       {
+           state->current_point_index = route_length;
+           guandao_debug_stop_reason = PORTION2_FINAL_MISSED_STOP_REASON;
+           * out_v_l = 0;
+           * out_v_r = 0;
+           *out_servo = 0;
+           last_target_steering = 0.0f;
+           last_steer_limit_ms = 0;
+           return;
+       }
        if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
        {
            if(!portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo))
