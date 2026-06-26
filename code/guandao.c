@@ -50,6 +50,8 @@ static uint8 portion2_serial_trace_enabled = 0;
 static int16 portion2_run_last_report_point = -1;
 static uint8 portion2_run_last_report_gps = 255;
 static uint32 portion2_final_yaw_align_start_ms = 0;
+static float portion2_run_final_yaw = 0.0f;
+static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
 static uint32 portion2_record_k3_start_ms = 0;
@@ -78,6 +80,13 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define GUANDAO_SHARP_TURN_SPEED_RATIO 0.55f
 #define GUANDAO_STEER_RATE_LOW         3.0f
 #define GUANDAO_STEER_RATE_HIGH        1.5f
+#define PORTION2_STEERING_GAIN         1.25f
+#define PORTION2_STEERING_CMD_LIMIT    20.0f
+#define PORTION2_STEER_RATE_LIMIT      1.0f
+#define PORTION2_MIN_PREVIEW_STEPS     8
+#define PORTION2_CURVE_PREVIEW_STEPS   14
+#define PORTION2_REFERENCE_SMOOTH_PASSES 2
+#define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.25f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 // Alias to align naming with example project
 #define GUANDAO_AUTO_GPS_RECORD_DIST   PORTION2_AUTO_GPS_RECORD_DIST
@@ -102,6 +111,7 @@ static int16 guandao_clamp_length(int length);
 static int16 guandao_route_length(guandao_state *state);
 static state_t guandao_route_point(guandao_state *state, int index);
 static float guandao_normalize_angle(float angle);
+static float guandao_segment_yaw(state_t from, state_t to);
 static uint8 portion2_route_required_gps(uint8 route_id);
 
 static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_length, int16 plan_length)
@@ -254,6 +264,10 @@ static void portion2_serial_log_run_point_event(uint8 force)
     if(run_index >= route_len)
     {
         state_t final_point = guandao_route_point(&portion_2, route_len - 1);
+        if(portion2_state_flag != 0)
+        {
+            final_point.theta = portion2_run_final_yaw;
+        }
         float yaw_error = guandao_normalize_angle(final_point.theta - Yaw_1);
         pos += sprintf(line,
                        "[P2-RUN-END] route=%u idx=%d/%d raw_pt=%d/%d gps=%u/%d reason=%u yaw=",
@@ -436,7 +450,7 @@ static uint8 portion2_final_yaw_align(state_t final_point, float dist_to_final, 
     guandao_debug_stop_reason = 9;
     *out_v_l = PORTION2_FINAL_YAW_ALIGN_SPEED;
     *out_v_r = PORTION2_FINAL_YAW_ALIGN_SPEED;
-    *out_servo = (yaw_error > 0.0f) ? PORTION2_FINAL_YAW_ALIGN_STEER_DEG : -PORTION2_FINAL_YAW_ALIGN_STEER_DEG;
+    *out_servo = (yaw_error > 0.0f) ? -PORTION2_FINAL_YAW_ALIGN_STEER_DEG : PORTION2_FINAL_YAW_ALIGN_STEER_DEG;
     return 0;
 }
 
@@ -472,6 +486,43 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
     for(uint8 i = 0; i < portion_2.gps_recode_length && i < MAX_GPS_RECODE; i++)
     {
         portion_2.recode_gpsmap[i].theta = guandao_normalize_angle(portion_2.recode_gpsmap[i].theta + yaw_delta);
+    }
+}
+
+static void portion2_smooth_reference_route(void)
+{
+    int16 length = guandao_clamp_length(portion_2.length_index);
+
+    if(length < 4) return;
+
+    for(uint8 pass = 0; pass < PORTION2_REFERENCE_SMOOTH_PASSES; pass++)
+    {
+        portion2_reference_smooth_buffer[0] = portion_2.recode_map[0];
+        portion2_reference_smooth_buffer[length - 1] = portion_2.recode_map[length - 1];
+
+        for(int16 i = 1; i < length - 1; i++)
+        {
+            state_t prev = portion_2.recode_map[i - 1];
+            state_t cur = portion_2.recode_map[i];
+            state_t next = portion_2.recode_map[i + 1];
+            float middle_weight = 1.0f - 2.0f * PORTION2_REFERENCE_SMOOTH_WEIGHT;
+
+            portion2_reference_smooth_buffer[i] = cur;
+            portion2_reference_smooth_buffer[i].x =
+                    prev.x * PORTION2_REFERENCE_SMOOTH_WEIGHT
+                    + cur.x * middle_weight
+                    + next.x * PORTION2_REFERENCE_SMOOTH_WEIGHT;
+            portion2_reference_smooth_buffer[i].y =
+                    prev.y * PORTION2_REFERENCE_SMOOTH_WEIGHT
+                    + cur.y * middle_weight
+                    + next.y * PORTION2_REFERENCE_SMOOTH_WEIGHT;
+            portion2_reference_smooth_buffer[i].theta = guandao_segment_yaw(prev, next);
+        }
+
+        for(int16 i = 0; i < length; i++)
+        {
+            portion_2.recode_map[i] = portion2_reference_smooth_buffer[i];
+        }
     }
 }
 
@@ -883,8 +934,15 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     }
     guandao_debug_angle_diff = angle_diff;
 
-    
-    
+    if(state == &portion_2)
+    {
+        steering_gain = PORTION2_STEERING_GAIN;
+        steering_limit = PORTION2_STEERING_CMD_LIMIT;
+        steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
+        if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
+        if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+    }
+
     if(distance_to_target <= arrive_threshold)
     {
         if(guandao_debug_stop_reason == 0) guandao_debug_stop_reason = 2;
@@ -930,6 +988,14 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     {
         curve_preview_steps = steer_preview_steps + 3;
     }
+    if(state == &portion_2)
+    {
+        steering_gain = PORTION2_STEERING_GAIN;
+        steering_limit = PORTION2_STEERING_CMD_LIMIT;
+        steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
+        if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
+        if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+    }
 
     pursuit_midhandle(state , &current_point , steer_preview_steps , &preview_alpha , &actual_ld);
     pursuit_midhandle(state , &current_point , curve_preview_steps , &preview_alpha2 , &actual_ld2);
@@ -953,6 +1019,10 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
 //   slip_cheak(&guandao_ecd,target_steering);
 
    state_t final_point = guandao_route_point(state, route_length - 1);
+   if(state == &portion_2)
+   {
+       final_point.theta = portion2_run_final_yaw;
+   }
    float dist_to_final = get_distance(state->current_state, final_point);
    guandao_debug_dist_final = dist_to_final;
    float v_center = base_speed;
@@ -1077,7 +1147,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
                return;
            }
            state->current_point_index = route_length;
-           guandao_debug_stop_reason = 8;
+           if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
            * out_v_l = 0;
            * out_v_r = 0;
            *out_servo = 0;
@@ -1096,7 +1166,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
            return;
        }
        state->current_point_index = route_length;
-       guandao_debug_stop_reason = 8;
+       if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
        * out_v_l = 0;
        * out_v_r = 0;
        *out_servo = 0;
@@ -1914,6 +1984,7 @@ void portion2_run_stop(void)
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
     portion2_final_yaw_align_start_ms = 0;
+    portion2_run_final_yaw = 0.0f;
     daoche_flag = 0;
     conrtol_mode = GUANDAO;
     out_v_l = 0;
@@ -1987,7 +2058,9 @@ void portion2_run_task(void)
             }
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
             portion2_align_route_to_current_yaw(run_start_theta);
+            portion2_smooth_reference_route();
             guandao_build_smooth_plan(&portion_2);
+            portion2_run_final_yaw = guandao_route_point(&portion_2, guandao_route_length(&portion_2) - 1).theta;
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
                 GPS_state gps_point = portion_2.recode_gpsmap[i];
@@ -2013,6 +2086,7 @@ void portion2_run_task(void)
                 portion2_run_reverse = 0;
                 portion2_run_drive_reverse = 0;
                 portion2_final_yaw_align_start_ms = 0;
+                portion2_run_final_yaw = 0.0f;
                 daoche_flag = 0;
                 conrtol_mode = GUANDAO;
                 portion2_state_flag = 3;
@@ -2026,6 +2100,7 @@ void portion2_run_task(void)
             portion2_run_reverse = 0;
             portion2_run_drive_reverse = 0;
             portion2_final_yaw_align_start_ms = 0;
+            portion2_run_final_yaw = 0.0f;
             daoche_flag = 0;
             conrtol_mode = GUANDAO;
             break;
