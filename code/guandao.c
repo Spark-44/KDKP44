@@ -80,13 +80,13 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define GUANDAO_SHARP_TURN_SPEED_RATIO 0.55f
 #define GUANDAO_STEER_RATE_LOW         3.0f
 #define GUANDAO_STEER_RATE_HIGH        1.5f
-#define PORTION2_STEERING_GAIN         1.05f
-#define PORTION2_STEERING_CMD_LIMIT    15.0f
-#define PORTION2_STEER_RATE_LIMIT      0.7f
-#define PORTION2_MIN_PREVIEW_STEPS     10
-#define PORTION2_CURVE_PREVIEW_STEPS   18
-#define PORTION2_REFERENCE_SMOOTH_PASSES 2
-#define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.25f
+#define PORTION2_STEERING_GAIN         0.90f
+#define PORTION2_STEERING_CMD_LIMIT    12.0f
+#define PORTION2_STEER_RATE_LIMIT      0.5f
+#define PORTION2_MIN_PREVIEW_STEPS     14
+#define PORTION2_CURVE_PREVIEW_STEPS   24
+#define PORTION2_REFERENCE_SMOOTH_PASSES 4
+#define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.35f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 // Alias to align naming with example project
 #define GUANDAO_AUTO_GPS_RECORD_DIST   PORTION2_AUTO_GPS_RECORD_DIST
@@ -815,7 +815,7 @@ void guandao_build_smooth_plan(guandao_state * state)
         state_t p3 = state->recode_map[(i + 2 < source_length) ? i + 2 : i + 1];
         float turn_in = fabsf(guandao_normalize_angle(guandao_segment_yaw(p0, p1) - guandao_segment_yaw(p1, p2)));
         float turn_out = fabsf(guandao_normalize_angle(guandao_segment_yaw(p1, p2) - guandao_segment_yaw(p2, p3)));
-        uint8 keep_corner_linear = (turn_in >= GUANDAO_SHARP_TURN_ANGLE || turn_out >= GUANDAO_SHARP_TURN_ANGLE);
+        uint8 keep_corner_linear = (state != &portion_2 && (turn_in >= GUANDAO_SHARP_TURN_ANGLE || turn_out >= GUANDAO_SHARP_TURN_ANGLE));
 
         for(int j = 0; j < samples && state->planned_length < MAX_LENGTH_INDEX - 1; j++)
         {
