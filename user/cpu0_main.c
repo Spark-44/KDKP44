@@ -164,6 +164,7 @@ static void Portion2_Run_Mode_Key_Handle(void)
         rear_motor_stop();
         portion2_mode_key_transition_lock();
         portion2_record_enter_mode();
+        Key_Init();
         main_mode = Guandao_Portion2_Recode;
         conrtol_mode = IDLE;
         voice_inited = 0;
