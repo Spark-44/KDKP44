@@ -347,6 +347,26 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_FORWARD_10M + (data - 'i')));
     }
+    else if(data == 'Q' || data == 'q')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M);
+    }
+    else if(data == 'R' || data == 'r')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M);
+    }
     else
     {
         reverse_route_pending = 0;

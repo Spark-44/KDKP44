@@ -123,6 +123,7 @@ static float guandao_normalize_angle(float angle);
 static float guandao_segment_yaw(state_t from, state_t to);
 static uint8 portion2_route_required_gps(uint8 route_id);
 static uint16 portion2_route_gps_offset(uint8 route_id);
+static uint8 portion2_route_uses_gps(uint8 route_id);
 
 static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_length, int16 plan_length)
 {
@@ -1514,6 +1515,11 @@ static uint8 portion2_route_required_gps(uint8 route_id)
     return portion2_route_required_gps_count[route_id];
 }
 
+static uint8 portion2_route_uses_gps(uint8 route_id)
+{
+    return (route_id < PORTION2_ROUTE_COUNT && route_id != PORTION2_ROUTE_STRAIGHT) ? 1U : 0U;
+}
+
 static uint8 portion2_route_ready_for_run(uint8 route_id)
 {
     uint8 required;
@@ -1526,6 +1532,7 @@ static uint8 portion2_route_ready_for_run(uint8 route_id)
     required = portion2_route_required_gps(route_id);
     if(required == 0) return 0;
     if(portion2_route_length[route_id] < required) return 0;
+    if(!portion2_route_uses_gps(route_id)) return 1;
     gps_count = portion2_route_gps_count[route_id];
     if(gps_count < required) return 0;
 
@@ -1805,7 +1812,10 @@ void portion2_set_back_channel(uint8 channel)
 void guandao_trace_direct(guandao_state * p)
 {
     update_state(p,&guandao_ecd);
-    if(GPS_WORK_FLAG && p == &portion_2) portion2_gps_fusion_update(p);
+    if(GPS_WORK_FLAG && p == &portion_2 && portion2_route_uses_gps(portion2_selected_route))
+    {
+        portion2_gps_fusion_update(p);
+    }
     pursuit_contral_mode(p ,&out_v_l ,&out_v_r ,&out_servo);
     if(GPS_WORK_FLAG && p != &portion_2)trace_gps(p);
     follow_points_show(p);
@@ -2262,6 +2272,10 @@ void portion2_run_task(void)
             {
                 portion_2.gps_recode_length = PORTION2_GPS_PER_ROUTE;
             }
+            if(!portion2_route_uses_gps(portion2_selected_route))
+            {
+                portion_2.gps_recode_length = 0;
+            }
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
                 uint16 gps_offset = portion2_route_gps_offset(portion2_selected_route);
@@ -2287,7 +2301,15 @@ void portion2_run_task(void)
             portion2_translate_route_to_origin();
             portion2_align_route_to_current_yaw(run_start_theta);
             portion2_smooth_reference_route();
-            gps_prepare_ready = portion2_gps_fusion_prepare(&portion_2);
+            gps_prepare_ready = 0;
+            if(portion2_route_uses_gps(portion2_selected_route))
+            {
+                gps_prepare_ready = portion2_gps_fusion_prepare(&portion_2);
+            }
+            else
+            {
+                portion2_gps_fusion_reset();
+            }
             guandao_build_smooth_plan(&portion_2);
             portion2_run_final_yaw = guandao_route_point(&portion_2, guandao_route_length(&portion_2) - 1).theta;
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)

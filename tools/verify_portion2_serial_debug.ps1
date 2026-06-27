@@ -12,6 +12,7 @@ $displayH = Get-Content -Raw -Path (Join-Path $root "code\display.h")
 $flashC = Get-Content -Raw -Path (Join-Path $root "code\flash.c")
 $flashH = Get-Content -Raw -Path (Join-Path $root "code\flash.h")
 $fixedActionC = Get-Content -Raw -Path (Join-Path $root "code\subject_2_fixed_action.c")
+$voiceActionH = Get-Content -Raw -Path (Join-Path $root "code\voice_drive_action.h")
 $gpsC = Get-Content -Raw -Path (Join-Path $root "code\gps.c")
 $gpsH = Get-Content -Raw -Path (Join-Path $root "code\gps.h")
 $commonHeadfile = Get-Content -Raw -Path (Join-Path $root "libraries\zf_common\zf_common_headfile.h")
@@ -135,6 +136,18 @@ $checks = @(
     @{ Name = "voice sleep no longer stops vehicle"; Pass = $cpu0 -notmatch "case\s+OFFLINE_VOICE_CMD_SLEEP\s*:[\s\S]*?(voice_drive_action_stop|portion2_run_stop|rear_motor_stop)\s*\(" },
     @{ Name = "fixed turn timeout is 60 seconds"; Pass = $fixedActionC -match "SUBJECT_2_FIXED_TURN_TIMEOUT_MS\s+\(60000U\)" -and $fixedActionC -match "elapsed_ms\s*>=\s*SUBJECT_2_FIXED_TURN_TIMEOUT_MS" },
     @{ Name = "fixed turn logs yaw delta"; Pass = $fixedActionC -match "\[FIXED\]" -and $fixedActionC -match "voice_drive_action_get_yaw_delta" },
+    @{ Name = "encoder yaw straight action modes declared"; Pass = $voiceActionH -match "VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M" -and $voiceActionH -match "VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M" },
+    @{ Name = "Q and R dispatch encoder yaw straight actions"; Pass = $cpu0 -match "data\s*==\s*'Q'\s*\|\|\s*data\s*==\s*'q'[\s\S]*?VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M" -and $cpu0 -match "data\s*==\s*'R'\s*\|\|\s*data\s*==\s*'r'[\s\S]*?VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M" },
+    @{ Name = "encoder yaw actions measure real encoder distance"; Pass = $fixedActionC -match "l_ecdcounter\s*\(\s*\)" -and $fixedActionC -match "calculate_delta\s*\(" -and $fixedActionC -match "ONE_TICK_DISTANCE" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_DISTANCE_M\s+\(10\.0f\)" },
+    @{ Name = "encoder yaw actions do not integrate commanded speed"; Pass = $fixedActionC -match "subject_2_fixed_is_encoder_yaw_action" -and $fixedActionC -match "if\s*\(\s*!subject_2_fixed_is_encoder_yaw_action\s*\(\s*subject_2_fixed_action_state\.mode\s*\)\s*\)[\s\S]*?distance_m\s*\+=" },
+    @{ Name = "encoder yaw actions use bounded PD steering"; Pass = $fixedActionC -match "SUBJECT_2_ENCODER_YAW_KP" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_KD" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_DEADBAND_DEG" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG" -and $fixedActionC -match "yaw_target\s*-\s*Yaw_1" },
+    @{ Name = "reverse encoder yaw action reverses steering correction"; Pass = $fixedActionC -match "VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M[\s\S]*?steer_command\s*=\s*-steer_command" },
+    @{ Name = "encoder yaw action slows and has timeout and stall stops"; Pass = $fixedActionC -match "SUBJECT_2_ENCODER_YAW_SLOWDOWN_M\s+\(1\.0f\)" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_TIMEOUT_MS\s+\(60000U\)" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_STALL_MS\s+\(3000U\)" },
+    @{ Name = "encoder yaw action emits straight diagnostics"; Pass = $fixedActionC -match "\[STRAIGHT\]" -and $fixedActionC -match '"START"' -and $fixedActionC -match '"RUN"' -and $fixedActionC -match '"STOP"' },
+    @{ Name = "route 8 alone bypasses gps fusion policy"; Pass = $guandaoC -match "static\s+uint8\s+portion2_route_uses_gps\s*\(\s*uint8\s+route_id\s*\)" -and $guandaoC -match "route_id\s*!=\s*PORTION2_ROUTE_STRAIGHT" },
+    @{ Name = "route 8 readiness skips gps requirements"; Pass = $guandaoC -match "if\s*\(\s*!portion2_route_uses_gps\s*\(\s*route_id\s*\)\s*\)\s*return\s+1\s*;" },
+    @{ Name = "route 8 skips gps prepare and runtime update"; Pass = $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_prepare" -and $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_update" },
+    @{ Name = "route 8 runtime copy exposes zero gps points"; Pass = $guandaoC -match "!portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion_2\.gps_recode_length\s*=\s*0" },
     @{ Name = "smooth plan keeps sharp corners linear"; Pass = $guandaoC -match "keep_corner_linear" -and $guandaoC -match "GUANDAO_SHARP_TURN_ANGLE" },
     @{ Name = "portion2 smooth plan does not force sharp corners"; Pass = $guandaoC -match "state\s*!=\s*&portion_2\s*&&\s*\(turn_in\s*>=\s*GUANDAO_SHARP_TURN_ANGLE" },
     @{ Name = "smooth pursuit uses local arrive threshold"; Pass = $guandaoC -match "float\s+arrive_threshold\s*=\s*persuit_threshold" -and $guandaoC -match "distance_to_target\s*<=\s*arrive_threshold" -and $guandaoC -notmatch "persuit_threshold\s*=\s*persuit_threshold\s*\*" },
