@@ -82,6 +82,9 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define GUANDAO_STEER_RATE_HIGH        1.5f
 #define PORTION2_STEERING_GAIN         0.90f
 #define PORTION2_STEERING_CMD_LIMIT    12.0f
+#define PORTION2_SHARP_STEERING_CMD_LIMIT 20.0f
+#define PORTION2_SHARP_TURN_TRIGGER_DEG 4.0f
+#define PORTION2_SHARP_TURN_RAW_LOOKAHEAD 6
 #define PORTION2_STEER_RATE_LIMIT      0.5f
 #define PORTION2_MIN_PREVIEW_STEPS     14
 #define PORTION2_CURVE_PREVIEW_STEPS   24
@@ -89,6 +92,7 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.35f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 #define PORTION2_GPS_RECORD_MIN_MOVE_M  0.20f
+#define PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M 2.0f
 #define PORTION2_GPS_RECORD_MIN_SATELLITES 8U
 #define PORTION2_GPS_END_MAX_RAW_GAP    4
 // Alias to align naming with example project
@@ -583,6 +587,33 @@ static float guandao_max_route_turn(guandao_state *state, int start_index, int l
     return max_turn;
 }
 
+static float portion2_max_reference_turn(guandao_state *state, int plan_index, int raw_lookahead)
+{
+    float max_turn = 0.0f;
+    int16 raw_length;
+    int raw_start;
+    int raw_end;
+
+    if(state == 0 || state != &portion_2) return 0.0f;
+    raw_length = guandao_clamp_length(state->length_index);
+    if(raw_length < 3) return 0.0f;
+
+    raw_start = portion2_raw_point_from_plan_index((int16)plan_index);
+    raw_end = raw_start + raw_lookahead;
+    if(raw_start < 1) raw_start = 1;
+    if(raw_end > raw_length - 2) raw_end = raw_length - 2;
+
+    for(int i = raw_start; i <= raw_end; i++)
+    {
+        float yaw_in = guandao_segment_yaw(state->recode_map[i - 1], state->recode_map[i]);
+        float yaw_out = guandao_segment_yaw(state->recode_map[i], state->recode_map[i + 1]);
+        float turn = fabsf(guandao_normalize_angle(yaw_out - yaw_in));
+        if(turn > max_turn) max_turn = turn;
+    }
+
+    return max_turn;
+}
+
 static int guandao_find_closest_index(guandao_state *state, int start_index, int end_index)
 {
     int best_index = start_index;
@@ -901,6 +932,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     int16 route_length = guandao_route_length(state);
     float arrive_threshold = persuit_threshold;
     float upcoming_turn = 0.0f;
+    float reference_turn = 0.0f;
 
     guandao_debug_stop_reason = 0;
     if(route_length == 0 || state->current_point_index == route_length)
@@ -1017,7 +1049,16 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     if(state == &portion_2)
     {
         steering_gain = PORTION2_STEERING_GAIN;
-        steering_limit = PORTION2_STEERING_CMD_LIMIT;
+        reference_turn = portion2_max_reference_turn(state, state->current_point_index,
+                                                       PORTION2_SHARP_TURN_RAW_LOOKAHEAD);
+        if(reference_turn >= PORTION2_SHARP_TURN_TRIGGER_DEG)
+        {
+            steering_limit = PORTION2_SHARP_STEERING_CMD_LIMIT;
+        }
+        else
+        {
+            steering_limit = PORTION2_STEERING_CMD_LIMIT;
+        }
         steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
         if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
         if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
@@ -1651,6 +1692,8 @@ static uint8 portion2_gps_candidate_valid(uint8 route_id)
     uint8 gps_count;
     uint16 previous_index;
     GPS_state previous;
+    float gps_distance;
+    float inertial_distance;
 
     if(route_id >= PORTION2_ROUTE_COUNT) return 0;
     if(!gnss.state || gnss.satellite_used < PORTION2_GPS_RECORD_MIN_SATELLITES) return 0;
@@ -1661,8 +1704,13 @@ static uint8 portion2_gps_candidate_valid(uint8 route_id)
     previous_index = portion2_route_gps_offset(route_id) + gps_count - 1;
     if(previous_index >= MAX_GPS_RECODE) return 0;
     previous = passage.recode_gpsmap[previous_index];
-    if(get_two_points_distance(previous.lat, previous.lon, gnss.latitude, gnss.longitude)
-            < PORTION2_GPS_RECORD_MIN_MOVE_M) return 0;
+    gps_distance = (float)get_two_points_distance(previous.lat, previous.lon, gnss.latitude, gnss.longitude);
+    if(gps_distance < PORTION2_GPS_RECORD_MIN_MOVE_M) return 0;
+    if(portion2_gps_auto_has_point[route_id])
+    {
+        inertial_distance = get_distance(passage.current_state, portion2_gps_auto_last_state[route_id]);
+        if(gps_distance > inertial_distance + PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M) return 0;
+    }
 
     return 1;
 }
