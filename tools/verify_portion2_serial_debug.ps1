@@ -96,6 +96,8 @@ $checks = @(
     @{ Name = "default base speed is 10"; Pass = $guandaoC -match "float\s+base_speed\s*=\s*10\.0f\s*;" },
     @{ Name = "default forward control speed is 10"; Pass = $flashC -match "int16\s+control\s*\[\s*5\s*\]\s*=\s*\{\s*10\s*," },
     @{ Name = "flash forward speed forced to 10"; Pass = $flashC -match "control\s*\[\s*0\s*\]\s*=\s*10\s*;" },
+    @{ Name = "record step is forced to 0.4 after flash read"; Pass = $flashC -match "Flash_Read_pid[\s\S]*?speed_pid\s*\[\s*3\s*\]\s*=\s*FLASH_RECODE_THRESHOLD_DEFAULT\s*;[\s\S]*?recode_threshold\s*=\s*speed_pid\s*\[\s*3\s*\]" },
+    @{ Name = "record step 0.4 is persisted on flash write"; Pass = $flashC -match "Flash_Write_pid[\s\S]*?speed_pid\s*\[\s*3\s*\]\s*=\s*FLASH_RECODE_THRESHOLD_DEFAULT\s*;[\s\S]*?flash_union_buffer\s*\[\s*i\s*\]\.float_type\s*=\s*speed_pid\s*\[\s*i\s*\]" },
     @{ Name = "record start keeps selected route"; Pass = $recordStartCases -ne "" -and $recordStartCases -notmatch "portion2_record_route\s*=\s*0\s*;" },
     @{ Name = "voice sleep command has no handler"; Pass = $cpu0 -notmatch "case\s+OFFLINE_VOICE_CMD_SLEEP\s*:" },
     @{ Name = "voice sleep no longer stops vehicle"; Pass = $cpu0 -notmatch "case\s+OFFLINE_VOICE_CMD_SLEEP\s*:[\s\S]*?(voice_drive_action_stop|portion2_run_stop|rear_motor_stop)\s*\(" },

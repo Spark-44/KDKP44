@@ -53,6 +53,7 @@ void Flash_Read_pid(void)
         {
             speed_pid[i] = flash_union_buffer[i].float_type;
         }
+        speed_pid[3] = FLASH_RECODE_THRESHOLD_DEFAULT;
         flash_sanitize_runtime_params();
         MoterPID_L.Kp = speed_pid[0];
         MoterPID_R.Kp = speed_pid[0];
@@ -78,6 +79,7 @@ void Flash_Read_pid(void)
 void Flash_Write_pid(void)
 {
     flash_buffer_clear();
+    speed_pid[3] = FLASH_RECODE_THRESHOLD_DEFAULT;
     flash_sanitize_runtime_params();
 
     MoterPID_L.Kp = speed_pid[0];
