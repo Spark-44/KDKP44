@@ -68,4 +68,5 @@ uint8 portion2_gps_fusion_last_valid(void);
 uint8 portion2_gps_fusion_get_satellites(void);
 float portion2_gps_fusion_get_error(void);
 float portion2_gps_fusion_get_correction(void);
+uint32 portion2_gps_get_fix_sequence(void);
 #endif /* CODE_GPS_H_ */

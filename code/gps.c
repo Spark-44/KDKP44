@@ -57,6 +57,11 @@ typedef struct
 static volatile uint32 portion2_gps_fix_sequence = 0;
 static portion2_gps_fusion_state_t portion2_gps_fusion;
 
+uint32 portion2_gps_get_fix_sequence(void)
+{
+    return portion2_gps_fix_sequence;
+}
+
 static long portion2_gps_fixed100(float value)
 {
     if(value >= 0.0f) return (long)(value * 100.0f + 0.5f);

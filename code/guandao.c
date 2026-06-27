@@ -63,6 +63,22 @@ static uint8 portion2_record_k4_wait_release = 0;
 static uint32 portion2_mode_k4_start_ms = 0;
 static uint8 portion2_mode_k4_wait_release = 0;
 
+typedef enum
+{
+    PORTION2_GPS_REJECT_NONE = 0,
+    PORTION2_GPS_REJECT_NO_FIX,
+    PORTION2_GPS_REJECT_LOW_SAT,
+    PORTION2_GPS_REJECT_ZERO_COORD,
+    PORTION2_GPS_REJECT_INTERVAL,
+    PORTION2_GPS_REJECT_REPEAT,
+    PORTION2_GPS_REJECT_JUMP,
+    PORTION2_GPS_REJECT_CAPACITY,
+    PORTION2_GPS_REJECT_INDEX,
+} portion2_gps_reject_reason_t;
+
+static portion2_gps_reject_reason_t portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
+static uint32 portion2_gps_reject_last_log_ms = 0;
+
 #define GUANDAO_START_SEARCH_POINTS    10
 #define GUANDAO_TRACE_SEARCH_POINTS    8
 #define GUANDAO_FRONT_TARGET_ANGLE     100.0f
@@ -1719,24 +1735,111 @@ static uint8 portion2_gps_candidate_valid(uint8 route_id)
     float gps_distance;
     float inertial_distance;
 
-    if(route_id >= PORTION2_ROUTE_COUNT) return 0;
-    if(!gnss.state || gnss.satellite_used < PORTION2_GPS_RECORD_MIN_SATELLITES) return 0;
-    if(gnss.latitude == 0.0 || gnss.longitude == 0.0) return 0;
+    if(route_id >= PORTION2_ROUTE_COUNT)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_INDEX;
+        return 0;
+    }
+    if(!gnss.state)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_NO_FIX;
+        return 0;
+    }
+    if(gnss.satellite_used < PORTION2_GPS_RECORD_MIN_SATELLITES)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_LOW_SAT;
+        return 0;
+    }
+    if(gnss.latitude == 0.0 || gnss.longitude == 0.0)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_ZERO_COORD;
+        return 0;
+    }
 
     gps_count = portion2_route_gps_count[route_id];
-    if(gps_count == 0) return 1;
+    if(gps_count == 0)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
+        return 1;
+    }
     previous_index = portion2_route_gps_offset(route_id) + gps_count - 1;
-    if(previous_index >= MAX_GPS_RECODE) return 0;
+    if(previous_index >= MAX_GPS_RECODE)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_INDEX;
+        return 0;
+    }
     previous = passage.recode_gpsmap[previous_index];
     gps_distance = (float)get_two_points_distance(previous.lat, previous.lon, gnss.latitude, gnss.longitude);
-    if(gps_distance < PORTION2_GPS_RECORD_MIN_MOVE_M) return 0;
+    if(gps_distance < PORTION2_GPS_RECORD_MIN_MOVE_M)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_REPEAT;
+        return 0;
+    }
     if(portion2_gps_auto_has_point[route_id])
     {
         inertial_distance = get_distance(passage.current_state, portion2_gps_auto_last_state[route_id]);
-        if(gps_distance > inertial_distance + PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M) return 0;
+        if(gps_distance > inertial_distance + PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M)
+        {
+            portion2_gps_reject_reason = PORTION2_GPS_REJECT_JUMP;
+            return 0;
+        }
     }
 
+    portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
     return 1;
+}
+
+static const char *portion2_gps_reject_reason_text(void)
+{
+    switch(portion2_gps_reject_reason)
+    {
+        case PORTION2_GPS_REJECT_NO_FIX: return "NO_FIX";
+        case PORTION2_GPS_REJECT_LOW_SAT: return "LOW_SAT";
+        case PORTION2_GPS_REJECT_ZERO_COORD: return "ZERO_COORD";
+        case PORTION2_GPS_REJECT_INTERVAL: return "INTERVAL";
+        case PORTION2_GPS_REJECT_REPEAT: return "REPEAT";
+        case PORTION2_GPS_REJECT_JUMP: return "JUMP";
+        case PORTION2_GPS_REJECT_CAPACITY: return "CAPACITY";
+        case PORTION2_GPS_REJECT_INDEX: return "INDEX";
+        default: return "NONE";
+    }
+}
+
+static uint8 portion2_gps_coordinate_valid(void)
+{
+    return (gnss.latitude != 0.0 && gnss.longitude != 0.0) ? 1U : 0U;
+}
+
+static void portion2_serial_log_gps_reject(void)
+{
+    uint32 now_ms = system_getval_ms();
+    uint8 gps_count;
+    char line[192];
+
+    if(portion2_gps_reject_reason == PORTION2_GPS_REJECT_NONE) return;
+    if((uint32)(now_ms - portion2_gps_reject_last_log_ms) < 1000U) return;
+    portion2_gps_reject_last_log_ms = now_ms;
+    gps_count = (portion2_record_route < PORTION2_ROUTE_COUNT)
+            ? portion2_route_gps_count[portion2_record_route]
+            : 0U;
+    sprintf(line,
+            "[P2-REC-GPS-SKIP] route=%u reason=%s fix=%u sats=%u coord=%u seq=%lu gps=%u/%u\r\n",
+            (unsigned)(portion2_record_route + 1),
+            portion2_gps_reject_reason_text(),
+            (unsigned)gnss.state,
+            (unsigned)gnss.satellite_used,
+            (unsigned)portion2_gps_coordinate_valid(),
+            (unsigned long)portion2_gps_get_fix_sequence(),
+            (unsigned)gps_count,
+            (unsigned)PORTION2_GPS_PER_ROUTE);
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
+static uint8 portion2_record_reject_gps(portion2_gps_reject_reason_t reason)
+{
+    portion2_gps_reject_reason = reason;
+    portion2_serial_log_gps_reject();
+    return 0;
 }
 
 static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
@@ -1744,23 +1847,27 @@ static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
     uint8 gps_count;
     uint16 gps_index;
 
-    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return 0;
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INDEX);
     gps_count = portion2_route_gps_count[portion2_record_route];
     if(force_endpoint)
     {
-        if(gps_count >= PORTION2_GPS_PER_ROUTE) return 0;
+        if(gps_count >= PORTION2_GPS_PER_ROUTE) return portion2_record_reject_gps(PORTION2_GPS_REJECT_CAPACITY);
     }
     else
     {
-        if(gps_count >= PORTION2_GPS_PER_ROUTE - 1) return 0;
+        if(gps_count >= PORTION2_GPS_PER_ROUTE - 1) return portion2_record_reject_gps(PORTION2_GPS_REJECT_CAPACITY);
         if(portion2_gps_auto_has_point[portion2_record_route] &&
            get_distance(passage.current_state, portion2_gps_auto_last_state[portion2_record_route])
-                   < PORTION2_AUTO_GPS_RECORD_DIST) return 0;
+                   < PORTION2_AUTO_GPS_RECORD_DIST) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INTERVAL);
     }
-    if(!portion2_gps_candidate_valid(portion2_record_route)) return 0;
+    if(!portion2_gps_candidate_valid(portion2_record_route))
+    {
+        portion2_serial_log_gps_reject();
+        return 0;
+    }
 
     gps_index = portion2_route_gps_offset(portion2_record_route) + gps_count;
-    if(gps_index >= MAX_GPS_RECODE) return 0;
+    if(gps_index >= MAX_GPS_RECODE) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INDEX);
 
     passage.recode_gpsmap[gps_index].lat = gnss.latitude;
     passage.recode_gpsmap[gps_index].lon = gnss.longitude;
@@ -1772,6 +1879,7 @@ static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
     portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
     portion2_gps_auto_has_point[portion2_record_route] = 1;
     portion2_route_saved_flag[portion2_record_route] = 0;
+    portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
     portion2_serial_write_gps_point("[P2-REC-GPS]", portion2_record_route, gps_count, passage.recode_gpsmap[gps_index]);
     Buzzer_check(30);
     return 1;
@@ -2060,6 +2168,8 @@ void portion2_record_task(void)
                 portion2_route_gps_count[portion2_record_route] = 0;
                 portion2_gps_auto_has_point[portion2_record_route] = 0;
                 portion2_route_saved_flag[portion2_record_route] = 0;
+                portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
+                portion2_gps_reject_last_log_ms = 0;
                 portion2_record_point();
                 portion2_auto_record_gps_point();
                 portion2_record_state = 1;
@@ -2134,6 +2244,17 @@ void portion2_record_task(void)
         ips200_show_string(X(13), Y(6), "m");
         ips200_show_string(X(1), Y(7), "SAVED: ");
         ips200_show_string(X(9), Y(7), portion2_route_saved_flag[route_id] ? "YES" : "NO ");
+        ips200_show_string(X(1), Y(8), "FIX");
+        ips200_show_int(X(6), Y(8), gnss.state, 1);
+        ips200_show_string(X(9), Y(8), "SAT");
+        ips200_show_int(X(13), Y(8), gnss.satellite_used, 2);
+        ips200_show_string(X(1), Y(9), "COORD");
+        ips200_show_string(X(8), Y(9), portion2_gps_coordinate_valid() ? "YES" : "NO ");
+        ips200_show_string(X(1), Y(10), "GSEQ");
+        ips200_show_int(X(7), Y(10), (int32)portion2_gps_get_fix_sequence(), 8);
+        ips200_show_string(X(1), Y(11), "GREASON");
+        ips200_show_string(X(9), Y(11), "          ");
+        ips200_show_string(X(9), Y(11), portion2_gps_reject_reason_text());
     }
 
     ips200_show_string(X(1),  Y(12), "K1:-/CLR");
