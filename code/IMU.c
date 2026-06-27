@@ -10,6 +10,7 @@ euler_param_t euler_angle;
 quater_param_t q_info = {1, 0, 0, 0};
 
 float Yaw_1 = 0;
+float Yaw_Straight_1 = 0;
 float Roll_1 = 0;
 float Picth_1 = 0;
 
@@ -22,6 +23,26 @@ static float i_error_z = 0.0f;
 
 #define IMU_AHRS_DELTA_T     0.0051f
 #define IMU_AHRS_ACC_ALPHA   0.3f
+#define STRAIGHT_YAW_GYRO_DEADBAND_RAD_S (0.005f)
+
+static void IMU_Update_Straight_Yaw(void)
+{
+    if(IMU_Data.gyro_z < STRAIGHT_YAW_GYRO_DEADBAND_RAD_S
+            && IMU_Data.gyro_z > -STRAIGHT_YAW_GYRO_DEADBAND_RAD_S)
+    {
+        return;
+    }
+
+    Yaw_Straight_1 -= RAD_TO_ANGLE(IMU_Data.gyro_z * 0.00916f);
+    if(Yaw_Straight_1 > 180.0f)
+    {
+        Yaw_Straight_1 -= 360.0f;
+    }
+    else if(Yaw_Straight_1 < -180.0f)
+    {
+        Yaw_Straight_1 += 360.0f;
+    }
+}
 
 static float Sqrt_Fast(float x)
 {
@@ -58,6 +79,7 @@ void IMU_GetValues(void)
 {
 
     IMU_Data.gyro_z = ((float) imu963ra_gyro_z - Gyro_Offset.Zdata)* PI / 180.0f/ 14.3f;
+    IMU_Update_Straight_Yaw();
 
     if(IMU_Data.gyro_z<0.025&&IMU_Data.gyro_z>-0.025)
     {

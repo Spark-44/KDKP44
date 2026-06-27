@@ -49,6 +49,7 @@ typedef struct {
 
 extern int IMU_1_Open_flag;
 extern float Yaw_1;
+extern float Yaw_Straight_1;
 extern float Roll_1;
 extern float Picth_1;
 extern IMU_param_t  IMU_Data;
