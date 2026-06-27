@@ -10,6 +10,7 @@ $controlH = Get-Content -Raw -Path (Join-Path $root "code\control.h")
 $displayC = Get-Content -Raw -Path (Join-Path $root "code\display.c")
 $displayH = Get-Content -Raw -Path (Join-Path $root "code\display.h")
 $flashC = Get-Content -Raw -Path (Join-Path $root "code\flash.c")
+$flashH = Get-Content -Raw -Path (Join-Path $root "code\flash.h")
 $fixedActionC = Get-Content -Raw -Path (Join-Path $root "code\subject_2_fixed_action.c")
 $gpsC = Get-Content -Raw -Path (Join-Path $root "code\gps.c")
 $gpsH = Get-Content -Raw -Path (Join-Path $root "code\gps.h")
@@ -92,24 +93,30 @@ $checks = @(
     @{ Name = "last route completion stays in WAIT"; Pass = $recordTaskBody -match "if\s*\(\s*portion2_record_route\s*\+\s*1\s*<\s*PORTION2_ROUTE_COUNT\s*\)[\s\S]*?portion2_record_route\s*\+\+[\s\S]*?portion2_record_state\s*=\s*2" -and $recordTaskBody -notmatch "portion2_record_state\s*=\s*\([^;\r\n]*PORTION2_ROUTE_COUNT[^;\r\n]*\)\s*\?\s*3\s*:\s*2" },
     @{ Name = "run main UI does not overwrite lower debug rows"; Pass = $runUi -ne "" -and $runUi -notmatch "ips200_show_string\s*\(\s*X\s*\(\s*1\s*\)\s*,\s*Y\s*\(\s*1[2-5]\s*\)" },
     @{ Name = "route run completeness helper exists"; Pass = $guandaoC -match "static\s+uint8\s+portion2_route_ready_for_run\s*\(\s*uint8\s+route_id\s*\)" },
-    @{ Name = "each route stores up to eight gps points"; Pass = $guandaoH -match "PORTION2_GPS_PER_ROUTE\s+8" },
+    @{ Name = "each route stores up to fourteen gps points"; Pass = $guandaoH -match "PORTION2_GPS_PER_ROUTE\s+14" },
+    @{ Name = "nine routes reserve 126 gps records"; Pass = $guandaoH -match "MAX_GPS_RECODE\s+126" -and $guandaoH -match "PORTION2_TOTAL_GPS_COUNT\s+126" },
     @{ Name = "route run still requires five gps points"; Pass = $guandaoC -match "portion2_route_required_gps_count\s*\[\s*PORTION2_ROUTE_COUNT\s*\]\s*=\s*\{\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*,\s*5\s*\}" },
-    @{ Name = "gps route slots use fixed eight point offsets"; Pass = $guandaoC -match "return\s+\(uint8\)\(route_id\s*\*\s*PORTION2_GPS_PER_ROUTE\)\s*;" },
+    @{ Name = "gps route slots use capacity based offsets"; Pass = $guandaoC -match "return\s+\(uint16\)\(route_id\s*\*\s*PORTION2_GPS_PER_ROUTE\)\s*;" },
     @{ Name = "gps recording stops at route capacity"; Pass = $guandaoC -match "gps_count\s*>=\s*PORTION2_GPS_PER_ROUTE" },
-    @{ Name = "flash stores gps8 layout marker"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC" -and $flashC -match "flash_union_buffer\s*\[\s*PORTION2_GPS_LAYOUT_INDEX\s*\]\.uint32_type\s*=\s*PORTION2_GPS_LAYOUT_MAGIC" },
+    @{ Name = "expanded gps table uses second flash page"; Pass = $flashH -match "RECODE_PASSAGE_TWO" -and $flashC -match "flash_write_page_from_buffer\s*\(\s*FLASH_SECTION_INDEX\s*,\s*RECODE_PASSAGE_TWO\s*\)" -and $flashC -match "flash_read_page_to_buffer\s*\(\s*FLASH_SECTION_INDEX\s*,\s*RECODE_PASSAGE_TWO\s*\)" },
+    @{ Name = "second gps page stores version marker and total count"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC\s+\(0x5032474EU\)" -and $flashC -match "PORTION2_GPS_PAGE_TOTAL_INDEX" -and $flashC -match "PORTION2_TOTAL_GPS_COUNT" },
     @{ Name = "legacy gps layout is invalidated"; Pass = $flashC -match "gps_layout_valid" -and $flashC -match "!gps_layout_valid[\s\S]*?portion2_route_gps_count\s*\[\s*i\s*\]\s*=\s*0" },
+    @{ Name = "recording rejects repeated gps coordinates"; Pass = $guandaoC -match "PORTION2_GPS_RECORD_MIN_MOVE_M\s+0\.20f" -and $guandaoC -match "portion2_gps_candidate_valid\s*\(" },
+    @{ Name = "automatic gps recording reserves final slot"; Pass = $guandaoC -match "gps_count\s*>=\s*PORTION2_GPS_PER_ROUTE\s*-\s*1" },
+    @{ Name = "record stop attempts endpoint gps capture"; Pass = $recordTaskBody -match "portion2_record_try_gps_point\s*\(\s*1\s*\)" },
+    @{ Name = "run validation requires gps endpoint coverage"; Pass = $guandaoC -match "PORTION2_GPS_END_MAX_RAW_GAP\s+4" -and $guandaoC -match "last_gps_raw_point\s*<\s*\(int16\)portion2_route_length\[route_id\]\s*-\s*1\s*-\s*PORTION2_GPS_END_MAX_RAW_GAP" },
     @{ Name = "portion2 gps fusion API declared"; Pass = $gpsH -match "uint8\s+portion2_gps_fusion_prepare" -and $gpsH -match "void\s+portion2_gps_fusion_update" -and $gpsH -match "void\s+portion2_gps_fusion_reset" },
     @{ Name = "gps fusion validates fix and satellites"; Pass = $gpsC -match "gnss\.state" -and $gpsC -match "gnss\.satellite_used\s*<\s*PORTION2_GPS_FUSION_MIN_SATELLITES" },
     @{ Name = "gps fusion rejects repeated and large-error fixes"; Pass = $gpsC -match "PORTION2_GPS_FUSION_REPEAT_DISTANCE" -and $gpsC -match "PORTION2_GPS_FUSION_MAX_ERROR\s+\(3\.0f\)" },
     @{ Name = "gps fusion correction is filtered and capped"; Pass = $gpsC -match "PORTION2_GPS_FUSION_GAIN\s+\(0\.10f\)" -and $gpsC -match "PORTION2_GPS_FUSION_MAX_CORRECTION\s+\(0\.10f\)" -and $gpsC -match "state->current_state\.x\s*\+=\s*correction_x" -and $gpsC -match "state->current_state\.y\s*\+=\s*correction_y" },
     @{ Name = "gps fusion emits serial diagnostics"; Pass = $gpsC -match "\[P2-GPS-FUSION\]" },
     @{ Name = "recorded gps binds zero-based raw point"; Pass = $guandaoC -match "cheak_flag\s*=\s*\(portion2_route_length\[portion2_record_route\]\s*>\s*0\)\s*\?\s*\(int16\)portion2_route_length\[portion2_record_route\]\s*-\s*1\s*:\s*0" },
-    @{ Name = "new fusion gps layout marker invalidates old binding"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC\s+\(0x50324746U\)" },
+    @{ Name = "new fusion gps layout marker invalidates old binding"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC\s+\(0x5032474EU\)" },
     @{ Name = "gps-ready run keeps recorded route orientation"; Pass = $guandaoC -match "if\s*\(\s*!portion2_gps_fusion_prepare\s*\(\s*&portion_2\s*\)\s*\)\s*\{[\s\S]*?portion2_align_route_to_current_yaw" },
     @{ Name = "gps fusion updates before pursuit steering"; Pass = $guandaoC -match "update_state\s*\(\s*p[\s\S]*?portion2_gps_fusion_update\s*\(\s*p\s*\)[\s\S]*?pursuit_contral_mode" },
     @{ Name = "run screen shows gps fusion state"; Pass = $guandaoC -match '"GF"' -and $guandaoC -match "portion2_gps_fusion_get_error" },
     @{ Name = "route run requires enough inertial points"; Pass = $guandaoC -match "portion2_route_length\s*\[\s*route_id\s*\]\s*<\s*required" },
-    @{ Name = "route run requires enough gps points"; Pass = $guandaoC -match "portion2_route_gps_count\s*\[\s*route_id\s*\]\s*<\s*required" },
+    @{ Name = "route run requires enough gps points"; Pass = $guandaoC -match "gps_count\s*=\s*portion2_route_gps_count\s*\[\s*route_id\s*\]" -and $guandaoC -match "gps_count\s*<\s*required" },
     @{ Name = "incomplete route rejected before run"; Pass = $guandaoC -match "portion2_run_reject_reason\s*=\s*4" -and $guandaoC -match "if\s*\(\s*!\s*portion2_route_ready_for_run\s*\(\s*route_id\s*\)\s*\)" },
     @{ Name = "default base speed is 10"; Pass = $guandaoC -match "float\s+base_speed\s*=\s*10\.0f\s*;" },
     @{ Name = "default forward control speed is 10"; Pass = $flashC -match "int16\s+control\s*\[\s*5\s*\]\s*=\s*\{\s*10\s*," },

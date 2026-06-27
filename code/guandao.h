@@ -5,11 +5,14 @@
 
 #define ONE_TICK_DISTANCE                      0.000378f
 #define MAX_LENGTH_INDEX                       400        
-#define MAX_GPS_RECODE                         72         
+#define MAX_GPS_RECODE                         126
 #define PORTION2_ROUTE_COUNT                   9
 #define PORTION2_ROUTE_MAX_POINTS              39
-#define PORTION2_GPS_PER_ROUTE                 8
-#define PORTION2_TOTAL_GPS_COUNT               72
+#define PORTION2_GPS_PER_ROUTE                 14
+#define PORTION2_TOTAL_GPS_COUNT               126
+#if PORTION2_TOTAL_GPS_COUNT != PORTION2_ROUTE_COUNT * PORTION2_GPS_PER_ROUTE
+#error "PORTION2_TOTAL_GPS_COUNT must match route count and per-route capacity"
+#endif
 #define PORTION2_ROUTE_1                       0
 #define PORTION2_ROUTE_2                       1
 #define PORTION2_ROUTE_3                       2

@@ -88,6 +88,9 @@ static uint8 portion2_mode_k4_wait_release = 0;
 #define PORTION2_REFERENCE_SMOOTH_PASSES 4
 #define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.35f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
+#define PORTION2_GPS_RECORD_MIN_MOVE_M  0.20f
+#define PORTION2_GPS_RECORD_MIN_SATELLITES 8U
+#define PORTION2_GPS_END_MAX_RAW_GAP    4
 // Alias to align naming with example project
 #define GUANDAO_AUTO_GPS_RECORD_DIST   PORTION2_AUTO_GPS_RECORD_DIST
 #define PORTION1_PARK_INDEX_WINDOW     40
@@ -115,6 +118,7 @@ static state_t guandao_route_point(guandao_state *state, int index);
 static float guandao_normalize_angle(float angle);
 static float guandao_segment_yaw(state_t from, state_t to);
 static uint8 portion2_route_required_gps(uint8 route_id);
+static uint16 portion2_route_gps_offset(uint8 route_id);
 
 static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_length, int16 plan_length)
 {
@@ -1455,21 +1459,30 @@ static uint8 portion2_route_required_gps(uint8 route_id)
 static uint8 portion2_route_ready_for_run(uint8 route_id)
 {
     uint8 required;
+    uint8 gps_count;
+    uint16 gps_offset;
+    int16 last_gps_raw_point;
 
     if(route_id >= PORTION2_ROUTE_COUNT) return 0;
 
     required = portion2_route_required_gps(route_id);
     if(required == 0) return 0;
     if(portion2_route_length[route_id] < required) return 0;
-    if(portion2_route_gps_count[route_id] < required) return 0;
+    gps_count = portion2_route_gps_count[route_id];
+    if(gps_count < required) return 0;
+
+    gps_offset = portion2_route_gps_offset(route_id);
+    last_gps_raw_point = passage.recode_gpsmap[gps_offset + gps_count - 1].cheak_flag;
+    if(last_gps_raw_point < 0 || last_gps_raw_point >= (int16)portion2_route_length[route_id]) return 0;
+    if(last_gps_raw_point < (int16)portion2_route_length[route_id] - 1 - PORTION2_GPS_END_MAX_RAW_GAP) return 0;
 
     return 1;
 }
 
-static uint8 portion2_route_gps_offset(uint8 route_id)
+static uint16 portion2_route_gps_offset(uint8 route_id)
 {
-    if(route_id >= PORTION2_ROUTE_COUNT) return (uint8)PORTION2_TOTAL_GPS_COUNT;
-    return (uint8)(route_id * PORTION2_GPS_PER_ROUTE);
+    if(route_id >= PORTION2_ROUTE_COUNT) return (uint16)PORTION2_TOTAL_GPS_COUNT;
+    return (uint16)(route_id * PORTION2_GPS_PER_ROUTE);
 }
 
 static void portion2_translate_route_to_origin(void)
@@ -1633,14 +1646,49 @@ static void portion2_record_point(void)
     }
 }
 
-static void portion2_record_gps_point(void)
+static uint8 portion2_gps_candidate_valid(uint8 route_id)
 {
-    uint8 gps_count = portion2_route_gps_count[portion2_record_route];
-    uint8 gps_index = portion2_route_gps_offset(portion2_record_route) + gps_count;
+    uint8 gps_count;
+    uint16 previous_index;
+    GPS_state previous;
 
-    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
-    if(gps_count >= PORTION2_GPS_PER_ROUTE) return;
-    if(gps_index >= MAX_GPS_RECODE) return;
+    if(route_id >= PORTION2_ROUTE_COUNT) return 0;
+    if(!gnss.state || gnss.satellite_used < PORTION2_GPS_RECORD_MIN_SATELLITES) return 0;
+    if(gnss.latitude == 0.0 || gnss.longitude == 0.0) return 0;
+
+    gps_count = portion2_route_gps_count[route_id];
+    if(gps_count == 0) return 1;
+    previous_index = portion2_route_gps_offset(route_id) + gps_count - 1;
+    if(previous_index >= MAX_GPS_RECODE) return 0;
+    previous = passage.recode_gpsmap[previous_index];
+    if(get_two_points_distance(previous.lat, previous.lon, gnss.latitude, gnss.longitude)
+            < PORTION2_GPS_RECORD_MIN_MOVE_M) return 0;
+
+    return 1;
+}
+
+static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
+{
+    uint8 gps_count;
+    uint16 gps_index;
+
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return 0;
+    gps_count = portion2_route_gps_count[portion2_record_route];
+    if(force_endpoint)
+    {
+        if(gps_count >= PORTION2_GPS_PER_ROUTE) return 0;
+    }
+    else
+    {
+        if(gps_count >= PORTION2_GPS_PER_ROUTE - 1) return 0;
+        if(portion2_gps_auto_has_point[portion2_record_route] &&
+           get_distance(passage.current_state, portion2_gps_auto_last_state[portion2_record_route])
+                   < PORTION2_AUTO_GPS_RECORD_DIST) return 0;
+    }
+    if(!portion2_gps_candidate_valid(portion2_record_route)) return 0;
+
+    gps_index = portion2_route_gps_offset(portion2_record_route) + gps_count;
+    if(gps_index >= MAX_GPS_RECODE) return 0;
 
     passage.recode_gpsmap[gps_index].lat = gnss.latitude;
     passage.recode_gpsmap[gps_index].lon = gnss.longitude;
@@ -1654,19 +1702,14 @@ static void portion2_record_gps_point(void)
     portion2_route_saved_flag[portion2_record_route] = 0;
     portion2_serial_write_gps_point("[P2-REC-GPS]", portion2_record_route, gps_count, passage.recode_gpsmap[gps_index]);
     Buzzer_check(30);
+    return 1;
 }
 
 static void portion2_auto_record_gps_point(void)
 {
     if(!GPS_WORK_FLAG) return;
     if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
-    if(portion2_route_gps_count[portion2_record_route] >= PORTION2_GPS_PER_ROUTE) return;
-
-    if(!portion2_gps_auto_has_point[portion2_record_route] ||
-       get_distance(passage.current_state, portion2_gps_auto_last_state[portion2_record_route]) >= PORTION2_AUTO_GPS_RECORD_DIST)
-    {
-        portion2_record_gps_point();
-    }
+    portion2_record_try_gps_point(0);
 }
 
 void portion2_reset(void)
@@ -1955,6 +1998,7 @@ void portion2_record_task(void)
             portion2_auto_record_gps_point();
             if(k3_short)
             {
+                portion2_record_try_gps_point(1);
                 portion2_record_state = 2;
                 portion2_serial_log_record_event("STOP");
                 Buzzer_check(50);
@@ -1962,6 +2006,7 @@ void portion2_record_task(void)
             if(key2_flag)
             {
                 key2_flag = 0;
+                portion2_record_try_gps_point(1);
                 if(portion2_route_gps_count[portion2_record_route] >= portion2_route_required_gps(portion2_record_route))
                 {
                     if(portion2_record_route + 1 < PORTION2_ROUTE_COUNT)
@@ -2152,7 +2197,7 @@ void portion2_run_task(void)
             }
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
-                uint8 gps_offset = portion2_route_gps_offset(portion2_selected_route);
+                uint16 gps_offset = portion2_route_gps_offset(portion2_selected_route);
                 if(portion2_run_reverse)
                 {
                     GPS_state gps_point = passage.recode_gpsmap[gps_offset + portion_2.gps_recode_length - 1 - i];
