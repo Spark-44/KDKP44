@@ -93,7 +93,7 @@ void angle_control_update(void) {
     angle_ctrl.control_count++;
 }
 
-void angle_control_set_target(int32 target_angle) {
+void angle_control_set_target(float target_angle) {
     if (target_angle > ANGLE_MAX_DEGREE) {
         angle_ctrl.target_angle = ANGLE_MAX_DEGREE;
     } else if (target_angle < ANGLE_MIN_DEGREE) {
@@ -109,6 +109,18 @@ void angle_control_rotate_relative(int32 delta_angle) {
 
 int32 angle_control_get_current_angle(void) {
     return (int32)angle_ctrl.current_angle;
+}
+
+float angle_control_get_target_angle(void) {
+    return angle_ctrl.target_angle;
+}
+
+float angle_control_get_current_angle_float(void) {
+    return angle_ctrl.current_angle;
+}
+
+int32 angle_control_get_output_pwm(void) {
+    return (int32)angle_ctrl.pid.Output;
 }
 
 void angle_control_reset(void) {

@@ -51,7 +51,7 @@ void Speed_Control(float tar_l, float tar_r)
 void Steer_Moter_Contral(float servo_out)
 {
     Value_Limit_float(&servo_out, ANGLE_MIN_DEGREE, ANGLE_MAX_DEGREE);
-    angle_control_set_target((int32)servo_out);
+    angle_control_set_target(servo_out);
     angle_control_update();
 
     angle = angle_control_get_current_angle();

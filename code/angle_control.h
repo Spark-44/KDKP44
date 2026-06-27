@@ -37,13 +37,19 @@ void angle_control_init(void);
 
 void angle_control_update(void);
 
-void angle_control_set_target(int32 target_angle);
+void angle_control_set_target(float target_angle);
 
 void angle_control_rotate_relative(int32 delta_angle);
 
 void angle_motor_set_pwm(int32 pwm_value);
 
 int32 angle_control_get_current_angle(void);
+
+float angle_control_get_target_angle(void);
+
+float angle_control_get_current_angle_float(void);
+
+int32 angle_control_get_output_pwm(void);
 
 void angle_control_reset(void);
 

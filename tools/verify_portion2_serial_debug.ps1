@@ -12,6 +12,9 @@ $displayH = Get-Content -Raw -Path (Join-Path $root "code\display.h")
 $flashC = Get-Content -Raw -Path (Join-Path $root "code\flash.c")
 $flashH = Get-Content -Raw -Path (Join-Path $root "code\flash.h")
 $fixedActionC = Get-Content -Raw -Path (Join-Path $root "code\subject_2_fixed_action.c")
+$angleControlC = Get-Content -Raw -Path (Join-Path $root "code\angle_control.c")
+$angleControlH = Get-Content -Raw -Path (Join-Path $root "code\angle_control.h")
+$controlC = Get-Content -Raw -Path (Join-Path $root "code\control.c")
 $voiceActionH = Get-Content -Raw -Path (Join-Path $root "code\voice_drive_action.h")
 $gpsC = Get-Content -Raw -Path (Join-Path $root "code\gps.c")
 $gpsH = Get-Content -Raw -Path (Join-Path $root "code\gps.h")
@@ -148,6 +151,9 @@ $checks = @(
     @{ Name = "straight diagnostics include encoder speed and pwm"; Pass = $fixedActionC -match 'enc=' -and $fixedActionC -match 'actual=' -and $fixedActionC -match 'pwm=' -and $fixedActionC -match "rear_motor_get_speed_mps\s*\(" -and $fixedActionC -match "rear_motor_get_pwm\s*\(" },
     @{ Name = "straight diagnostics preserve negative signs"; Pass = $fixedActionC -match "subject_2_straight_append_fixed100" -and $fixedActionC -match "scaled\s*<\s*0" },
     @{ Name = "straight diagnostics are rate limited to 500ms"; Pass = $fixedActionC -match "now_ms\s*-\s*last_log_ms\)\s*<\s*500U" },
+    @{ Name = "rack steering target preserves fractional degrees"; Pass = $angleControlH -match "angle_control_set_target\s*\(\s*float\s+target_angle\s*\)" -and $angleControlC -match "angle_control_set_target\s*\(\s*float\s+target_angle\s*\)" -and $controlC -match "angle_control_set_target\s*\(\s*servo_out\s*\)" -and $controlC -notmatch "angle_control_set_target\s*\(\s*\(int32\)servo_out\s*\)" },
+    @{ Name = "straight yaw integral is bounded and reset"; Pass = $fixedActionC -match "SUBJECT_2_ENCODER_YAW_KI\s+\(0\.20f\)" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT\s+\(20\.0f\)" -and $fixedActionC -match "yaw_error_integral\s*\+=\s*yaw_error\s*\*\s*dt_s" -and $fixedActionC -match "Value_Limit_float\s*\(\s*&subject_2_fixed_action_state\.yaw_error_integral" -and ([regex]::Matches($fixedActionC, "yaw_error_integral\s*=\s*0\.0f").Count -ge 2) },
+    @{ Name = "straight diagnostics expose rack execution"; Pass = $angleControlH -match "angle_control_get_target_angle" -and $angleControlH -match "angle_control_get_current_angle_float" -and $angleControlH -match "angle_control_get_output_pwm" -and $fixedActionC -match 'rack_target=' -and $fixedActionC -match 'rack_actual=' -and $fixedActionC -match 'rack_pwm=' },
     @{ Name = "encoder yaw action emits straight diagnostics"; Pass = $fixedActionC -match "\[STRAIGHT\]" -and $fixedActionC -match '"START"' -and $fixedActionC -match '"RUN"' -and $fixedActionC -match '"STOP"' },
     @{ Name = "route 8 alone bypasses gps fusion policy"; Pass = $guandaoC -match "static\s+uint8\s+portion2_route_uses_gps\s*\(\s*uint8\s+route_id\s*\)" -and $guandaoC -match "route_id\s*!=\s*PORTION2_ROUTE_STRAIGHT" },
     @{ Name = "route 8 readiness skips gps requirements"; Pass = $guandaoC -match "if\s*\(\s*!portion2_route_uses_gps\s*\(\s*route_id\s*\)\s*\)\s*return\s+1\s*;" },

@@ -17,7 +17,9 @@
 #define SUBJECT_2_ENCODER_YAW_DISTANCE_M   (10.0f)
 #define SUBJECT_2_ENCODER_YAW_SLOWDOWN_M   (1.0f)
 #define SUBJECT_2_ENCODER_YAW_KP           (0.80f)
+#define SUBJECT_2_ENCODER_YAW_KI           (0.20f)
 #define SUBJECT_2_ENCODER_YAW_KD           (0.04f)
+#define SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT (20.0f)
 #define SUBJECT_2_ENCODER_YAW_DEADBAND_DEG (0.05f)
 #define SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG (8.0f)
 #define SUBJECT_2_ENCODER_YAW_STEER_RATE_DEG (0.50f)
@@ -57,6 +59,7 @@ typedef struct
     int16 encoder_last_count;
     int32 encoder_delta_last;
     float yaw_error_last;
+    float yaw_error_integral;
     float steer_command;
     float speed_command;
     float progress_distance_mark;
@@ -96,6 +99,7 @@ static subject_2_fixed_action_state_t subject_2_fixed_action_state =
     SUBJECT_2_FIXED_TURN_PHASE_NONE,
     0,
     0,
+    0.0f,
     0.0f,
     0.0f,
     0.0f,
@@ -150,7 +154,7 @@ static void subject_2_encoder_yaw_log(const char *tag, const char *reason, uint8
     static uint32 last_log_ms = 0;
     uint32 now_ms = system_getval_ms();
     float yaw_error = subject_2_fixed_yaw_step(subject_2_fixed_action_state.yaw_target, Yaw_Straight_1);
-    char line[256];
+    char line[320];
     int position = 0;
 
     if(!force && (uint32)(now_ms - last_log_ms) < 500U) return;
@@ -172,7 +176,11 @@ static void subject_2_encoder_yaw_log(const char *tag, const char *reason, uint8
     subject_2_straight_append_fixed100(line, &position, subject_2_fixed_action_state.speed_command);
     position += sprintf(&line[position], " enc=%ld actual=", (long)subject_2_fixed_action_state.encoder_delta_last);
     subject_2_straight_append_fixed100(line, &position, rear_motor_get_speed_mps());
-    sprintf(&line[position], " pwm=%d reason=%s\r\n", (int)rear_motor_get_pwm(), reason);
+    position += sprintf(&line[position], " pwm=%d rack_target=", (int)rear_motor_get_pwm());
+    subject_2_straight_append_fixed100(line, &position, angle_control_get_target_angle());
+    position += sprintf(&line[position], " rack_actual=");
+    subject_2_straight_append_fixed100(line, &position, angle_control_get_current_angle_float());
+    sprintf(&line[position], " rack_pwm=%ld reason=%s\r\n", (long)angle_control_get_output_pwm(), reason);
     uart_write_string(DEBUG_UART_INDEX, line);
 }
 
@@ -231,6 +239,9 @@ static void subject_2_encoder_yaw_task(uint32 now_ms)
         float dt_s = (float)control_elapsed_ms * 0.001f;
         float yaw_error = subject_2_fixed_action_state.yaw_target - Yaw_Straight_1;
         float yaw_error_delta;
+        float yaw_error_integral_old;
+        float correction_without_new_integral;
+        float correction_with_new_integral;
         float steer_command;
         float steer_delta;
 
@@ -238,8 +249,25 @@ static void subject_2_encoder_yaw_task(uint32 now_ms)
         while(yaw_error < -180.0f) yaw_error += 360.0f;
         if(subject_2_fixed_abs_float(yaw_error) < SUBJECT_2_ENCODER_YAW_DEADBAND_DEG) yaw_error = 0.0f;
         yaw_error_delta = subject_2_fixed_yaw_step(yaw_error, subject_2_fixed_action_state.yaw_error_last);
-        steer_command = -(SUBJECT_2_ENCODER_YAW_KP * yaw_error
-                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s);
+        yaw_error_integral_old = subject_2_fixed_action_state.yaw_error_integral;
+        subject_2_fixed_action_state.yaw_error_integral += yaw_error * dt_s;
+        Value_Limit_float(&subject_2_fixed_action_state.yaw_error_integral,
+                          -SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT,
+                          SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT);
+        correction_without_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
+                + SUBJECT_2_ENCODER_YAW_KI * yaw_error_integral_old
+                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
+        correction_with_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
+                + SUBJECT_2_ENCODER_YAW_KI * subject_2_fixed_action_state.yaw_error_integral
+                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
+        if(subject_2_fixed_abs_float(correction_with_new_integral) > SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG
+                && subject_2_fixed_abs_float(correction_with_new_integral)
+                        > subject_2_fixed_abs_float(correction_without_new_integral))
+        {
+            subject_2_fixed_action_state.yaw_error_integral = yaw_error_integral_old;
+            correction_with_new_integral = correction_without_new_integral;
+        }
+        steer_command = -correction_with_new_integral;
         if(subject_2_fixed_action_state.mode == VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M)
         {
             steer_command = -steer_command;
@@ -411,6 +439,7 @@ void voice_drive_action_stop(void)
     subject_2_fixed_action_state.encoder_last_count = 0;
     subject_2_fixed_action_state.encoder_delta_last = 0;
     subject_2_fixed_action_state.yaw_error_last = 0.0f;
+    subject_2_fixed_action_state.yaw_error_integral = 0.0f;
     subject_2_fixed_action_state.steer_command = 0.0f;
     subject_2_fixed_action_state.speed_command = 0.0f;
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
@@ -437,6 +466,7 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
     subject_2_fixed_action_state.encoder_last_count = l_ecdcounter();
     subject_2_fixed_action_state.encoder_delta_last = 0;
     subject_2_fixed_action_state.yaw_error_last = 0.0f;
+    subject_2_fixed_action_state.yaw_error_integral = 0.0f;
     subject_2_fixed_action_state.steer_command = 0.0f;
     subject_2_fixed_action_state.speed_command = 0.0f;
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
