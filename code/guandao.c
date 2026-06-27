@@ -124,6 +124,14 @@ static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_lengt
     return (int16)(((int32)raw_index * (int32)(plan_length - 1) + (raw_length - 1) / 2) / (raw_length - 1));
 }
 
+static int16 portion2_human_point_number(int16 point_index, int16 total)
+{
+    if(total <= 0) return 0;
+    if(point_index < 0) return 1;
+    if(point_index >= total) return total;
+    return point_index + 1;
+}
+
 static int16 portion2_raw_point_from_plan_index(int16 plan_index)
 {
     int16 raw_length = guandao_clamp_length(portion_2.length_index);
@@ -342,7 +350,10 @@ static void portion2_serial_log_run(void)
     state_t target_point;
     state_t final_point;
     float final_dist;
-    char line[320];
+    int16 raw_number;
+    int16 plan_number;
+    uint8 gps_done;
+    char line[400];
     int pos = 0;
 
     now_ms = system_getval_ms();
@@ -353,18 +364,27 @@ static void portion2_serial_log_run(void)
     run_index = guandao_clamp_length(portion_2.current_point_index);
     raw_point = portion2_raw_point_from_plan_index(run_index);
     raw_length = guandao_clamp_length(portion_2.length_index);
+    raw_number = portion2_human_point_number(raw_point, raw_length);
+    plan_number = portion2_human_point_number(run_index, (int16)route_len);
+    gps_done = portion2_run_gps_reached_count();
     target_point = guandao_route_point(&portion_2, run_index);
     final_point = guandao_route_point(&portion_2, route_len > 0 ? (int)route_len - 1 : 0);
     final_dist = get_distance(portion_2.current_state, final_point);
     pos += sprintf(line,
-                   "[P2-RUN] route=%u state=%u idx=%d/%u raw_pt=%d/%d gps=%u/%d x=",
+                   "[P2-RUN] route=%u state=%u idx=%d/%u raw_pt=%d/%d gps=%u/%d raw_no=%d/%d plan_no=%d/%d gps_no=%u/%d x=",
                    (unsigned)(portion2_selected_route + 1),
                    (unsigned)portion2_state_flag,
                    portion_2.current_point_index,
                    (unsigned)route_len,
                    (int)raw_point,
                    (int)raw_length,
-                   (unsigned)portion2_run_gps_reached_count(),
+                   (unsigned)gps_done,
+                   (int)portion_2.gps_recode_length,
+                   (int)raw_number,
+                   (int)raw_length,
+                   (int)plan_number,
+                   (int)route_len,
+                   (unsigned)gps_done,
                    (int)portion_2.gps_recode_length);
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion_2.current_state.x);
     pos += sprintf(&line[pos], " y=");
@@ -1458,6 +1478,61 @@ static uint8 portion2_route_gps_offset(uint8 route_id)
     return offset;
 }
 
+static float portion2_recorded_route_distance(uint8 route_id)
+{
+    uint16 length;
+    uint16 offset;
+    float distance = 0.0f;
+
+    if(route_id >= PORTION2_ROUTE_COUNT) return 0.0f;
+    length = portion2_route_length[route_id];
+    if(length > PORTION2_ROUTE_MAX_POINTS) length = PORTION2_ROUTE_MAX_POINTS;
+    offset = portion2_route_offset(route_id);
+
+    for(uint16 i = 1; i < length; i++)
+    {
+        distance += get_distance(passage.recode_map[offset + i - 1], passage.recode_map[offset + i]);
+    }
+    return distance;
+}
+
+static void portion2_serial_log_record_status(void)
+{
+    static uint32 last_ms = 0;
+    uint32 now_ms;
+    uint8 route_id;
+    char line[256];
+    int pos = 0;
+
+    if(portion2_record_state != 1) return;
+    route_id = portion2_record_route;
+    if(route_id >= PORTION2_ROUTE_COUNT) return;
+
+    now_ms = system_getval_ms();
+    if((uint32)(now_ms - last_ms) < 500U) return;
+    last_ms = now_ms;
+
+    pos += sprintf(line,
+                   "[P2-REC-STATUS] route=%u state=%u raw=%u/%u gps=%u/%u dist=",
+                   (unsigned)(route_id + 1),
+                   (unsigned)portion2_record_state,
+                   (unsigned)portion2_route_length[route_id],
+                   (unsigned)PORTION2_ROUTE_MAX_POINTS,
+                   (unsigned)portion2_route_gps_count[route_id],
+                   (unsigned)portion2_route_required_gps(route_id));
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_recorded_route_distance(route_id));
+    pos += sprintf(&line[pos], " step=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), recode_threshold);
+    pos += sprintf(&line[pos], " x=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), passage.current_state.x);
+    pos += sprintf(&line[pos], " y=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), passage.current_state.y);
+    pos += sprintf(&line[pos], " yaw=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), Yaw_1);
+    pos += sprintf(&line[pos], "\r\n");
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
 void portion2_serial_dump_routes(void)
 {
     char line[120];
@@ -1898,6 +1973,8 @@ void portion2_record_task(void)
             break;
     }
 
+    portion2_serial_log_record_status();
+
     ips200_show_string(X(1), Y(0), "MODE: RECORD");
     ips200_show_string(X(1), Y(1), "ROUTE: ");
     ips200_show_int(X(9), Y(1), portion2_record_route + 1, 2);
@@ -1909,10 +1986,25 @@ void portion2_record_task(void)
         case 2: ips200_show_string(X(9), Y(2), "WAIT "); break;
         default: ips200_show_string(X(9), Y(2), "--   "); break;
     }
-    ips200_show_string(X(1), Y(3), "PTS: ");
-    ips200_show_int(X(6), Y(3), portion2_route_length[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1], 4);
-    ips200_show_string(X(1), Y(4), "SAVED: ");
-    ips200_show_string(X(9), Y(4), portion2_route_saved_flag[portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1] ? "YES" : "NO ");
+    {
+        uint8 route_id = portion2_record_route < PORTION2_ROUTE_COUNT ? portion2_record_route : PORTION2_ROUTE_COUNT - 1;
+        ips200_show_string(X(1), Y(3), "RAW");
+        ips200_show_int(X(6), Y(3), portion2_route_length[route_id], 2);
+        ips200_show_string(X(9), Y(3), "/");
+        ips200_show_int(X(11), Y(3), PORTION2_ROUTE_MAX_POINTS, 2);
+        ips200_show_string(X(1), Y(4), "GPS");
+        ips200_show_int(X(6), Y(4), portion2_route_gps_count[route_id], 2);
+        ips200_show_string(X(9), Y(4), "/");
+        ips200_show_int(X(11), Y(4), portion2_route_required_gps(route_id), 2);
+        ips200_show_string(X(1), Y(5), "DIST");
+        ips200_show_float(X(7), Y(5), portion2_recorded_route_distance(route_id), 6, 2);
+        ips200_show_string(X(14), Y(5), "m");
+        ips200_show_string(X(1), Y(6), "STEP");
+        ips200_show_float(X(7), Y(6), recode_threshold, 5, 2);
+        ips200_show_string(X(13), Y(6), "m");
+        ips200_show_string(X(1), Y(7), "SAVED: ");
+        ips200_show_string(X(9), Y(7), portion2_route_saved_flag[route_id] ? "YES" : "NO ");
+    }
 
     ips200_show_string(X(1),  Y(12), "K1:-/CLR");
     ips200_show_string(X(1),  Y(13), "K2:+/SAVE");
@@ -2130,28 +2222,40 @@ void portion2_run_task(void)
         uint32 p2_now = system_getval_ms();
         if(p2_now - p2_last_ms >= 100)
         {
+            int16 plan_total = guandao_route_length(&portion_2);
+            int16 plan_index = guandao_clamp_length(portion_2.current_point_index);
+            int16 raw_total = guandao_clamp_length(portion_2.length_index);
+            int16 raw_index = portion2_raw_point_from_plan_index(plan_index);
+            int16 raw_number = portion2_human_point_number(raw_index, raw_total);
+            int16 plan_number = portion2_human_point_number(plan_index, plan_total);
+            uint8 gps_done = portion2_run_gps_reached_count();
+
             p2_last_ms = p2_now;
             ips200_show_string(X(1), Y(8), "P2RUN");
-            ips200_show_string(X(1), Y(9), "Route");
-            ips200_show_int(X(8), Y(9), portion2_selected_route + 1, 2);
-            ips200_show_string(X(1), Y(10), "State");
-            ips200_show_int(X(8), Y(10), portion2_state_flag, 2);
-            ips200_show_string(X(1), Y(11), "Len");
-            ips200_show_int(X(6), Y(11), portion_2.length_index, 4);
-            ips200_show_string(X(1), Y(12), "Idx");
-            ips200_show_int(X(6), Y(12), portion_2.current_point_index, 4);
+            ips200_show_string(X(9), Y(8), "R");
+            ips200_show_int(X(11), Y(8), portion2_selected_route + 1, 2);
+            ips200_show_string(X(15), Y(8), "S");
+            ips200_show_int(X(17), Y(8), portion2_state_flag, 2);
+            ips200_show_string(X(1), Y(9), "RAW");
+            ips200_show_int(X(6), Y(9), raw_number, 3);
+            ips200_show_string(X(10), Y(9), "/");
+            ips200_show_int(X(12), Y(9), raw_total, 3);
+            ips200_show_string(X(1), Y(10), "PLAN");
+            ips200_show_int(X(6), Y(10), plan_number, 4);
+            ips200_show_string(X(11), Y(10), "/");
+            ips200_show_int(X(13), Y(10), plan_total, 4);
+            ips200_show_string(X(1), Y(11), "GPS");
+            ips200_show_int(X(6), Y(11), gps_done, 2);
+            ips200_show_string(X(9), Y(11), "/");
+            ips200_show_int(X(11), Y(11), portion_2.gps_recode_length, 2);
             ips200_show_string(X(1), Y(13), "RX");
             ips200_show_int(X(5), Y(13), portion2_run_last_rx, 3);
             ips200_show_string(X(10), Y(13), "Cnt");
             ips200_show_int(X(15), Y(13), portion2_run_rx_count, 4);
-            ips200_show_string(X(1), Y(14), "RLen");
-            ips200_show_int(X(7), Y(14), portion2_route_length[portion2_selected_route], 4);
-            ips200_show_string(X(12), Y(14), "Rej");
-            ips200_show_int(X(17), Y(14), portion2_run_reject_reason, 2);
-            ips200_show_string(X(1), Y(15), "Scn");
-            ips200_show_int(X(6), Y(15), dot_matrix_screen_scan_count, 6);
-            ips200_show_string(X(13), Y(15), "Rev");
-            ips200_show_int(X(17), Y(15), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
+            ips200_show_string(X(1), Y(14), "REJ");
+            ips200_show_int(X(6), Y(14), portion2_run_reject_reason, 2);
+            ips200_show_string(X(11), Y(14), "REV");
+            ips200_show_int(X(16), Y(14), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
         }
     }
 }
