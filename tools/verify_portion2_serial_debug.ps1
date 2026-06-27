@@ -18,6 +18,9 @@ $controlC = Get-Content -Raw -Path (Join-Path $root "code\control.c")
 $voiceActionH = Get-Content -Raw -Path (Join-Path $root "code\voice_drive_action.h")
 $gpsC = Get-Content -Raw -Path (Join-Path $root "code\gps.c")
 $gpsH = Get-Content -Raw -Path (Join-Path $root "code\gps.h")
+$gnssC = Get-Content -Raw -Path (Join-Path $root "libraries\zf_device\zf_device_gnss.c")
+$gnssH = Get-Content -Raw -Path (Join-Path $root "libraries\zf_device\zf_device_gnss.h")
+$isrC = Get-Content -Raw -Path (Join-Path $root "user\isr.c")
 $commonHeadfile = Get-Content -Raw -Path (Join-Path $root "libraries\zf_common\zf_common_headfile.h")
 $debugCodeSubdirMkPath = Join-Path $root "Debug\code\subdir.mk"
 $debugCodeSubdirMk = if(Test-Path $debugCodeSubdirMkPath) { Get-Content -Raw -Path $debugCodeSubdirMkPath } else { "" }
@@ -61,6 +64,13 @@ $checks = @(
     @{ Name = "record gps rejection log is rate limited to one second"; Pass = $guandaoC -match "portion2_gps_reject_last_log_ms" -and $guandaoC -match "now_ms\s*-\s*portion2_gps_reject_last_log_ms\)\s*<\s*1000U" },
     @{ Name = "record gps rejection logger guards invalid route index"; Pass = $guandaoC -match "gps_count\s*=\s*\(portion2_record_route\s*<\s*PORTION2_ROUTE_COUNT\)[\s\S]*?portion2_route_gps_count\[portion2_record_route\][\s\S]*?:\s*0U" },
     @{ Name = "gnss parsed update sequence API is exposed"; Pass = $gpsH -match "uint32\s+portion2_gps_get_fix_sequence\s*\(\s*void\s*\)" -and $gpsC -match "uint32\s+portion2_gps_get_fix_sequence\s*\(\s*void\s*\)[\s\S]*?return\s+portion2_gps_fix_sequence" },
+    @{ Name = "gnss diagnostics expose receive parse and error counters"; Pass = $gnssH -match "typedef\s+struct[\s\S]*?rx_byte_count[\s\S]*?line_count[\s\S]*?rmc_received[\s\S]*?gga_received[\s\S]*?other_received[\s\S]*?rmc_ok[\s\S]*?gga_ok[\s\S]*?parse_error_count[\s\S]*?frame_error_count[\s\S]*?gnss_diagnostic_struct" -and $gnssH -match "gnss_get_diagnostics\s*\(" },
+    @{ Name = "gnss parser returns sentence success bits"; Pass = $gnssH -match "GNSS_PARSE_RMC_OK" -and $gnssH -match "GNSS_PARSE_GGA_OK" -and $gnssC -match "parse_result\s*\|=\s*GNSS_PARSE_RMC_OK" -and $gnssC -match "parse_result\s*\|=\s*GNSS_PARSE_GGA_OK" },
+    @{ Name = "gnss uart only signals recognized sentences"; Pass = $gnssC -match "sentence_recognized" -and $gnssC -match "if\s*\(\s*sentence_recognized\s*\)[\s\S]*?gnss_flag\s*=\s*1" },
+    @{ Name = "gnss framing validates length and terminates buffers"; Pass = $gnssC -match "line_length\s*>=\s*GNSS_BUFFER_SIZE" -and $gnssC -match "target\s*\[\s*line_length\s*\]\s*=\s*'\\0'" -and $gnssC -match "frame_error_count\+\+" },
+    @{ Name = "gnss checksum parser guards malformed boundaries"; Pass = $gnssC -match "gps_nmea_checksum_valid" -and $gnssC -match "strchr\([^;]*'\*'\)" -and $gnssC -match "checksum_marker\s*==\s*NULL" -and $gnssC -match "checksum_marker\s*\[\s*1\s*\]" },
+    @{ Name = "gps sequence advances only after valid rmc or gga parse"; Pass = $isrC -match "parse_result\s*=\s*gnss_data_parse\s*\(\s*\)" -and $isrC -match "parse_result\s*&\s*\(\s*GNSS_PARSE_RMC_OK\s*\|\s*GNSS_PARSE_GGA_OK\s*\)[\s\S]*?portion2_gps_note_parsed_update\s*\(\s*\)" -and $gpsC -notmatch "void\s+update_gpsinformation\s*\(\s*void\s*\)\s*\{\s*portion2_gps_fix_sequence\+\+" },
+    @{ Name = "gnss serial diagnostics are rate limited to one second"; Pass = $gpsH -match "gps_serial_diagnostic_task\s*\(" -and $gpsC -match "\[GNSS-DIAG\]" -and $gpsC -match "1000U" -and $cpu0 -match "gps_serial_diagnostic_task\s*\(\s*\)" },
     @{ Name = "record screen shows gnss fix satellites coordinate sequence and reason"; Pass = $guandaoC -match '"FIX"' -and $guandaoC -match '"SAT"' -and $guandaoC -match '"COORD"' -and $guandaoC -match '"GSEQ"' -and $guandaoC -match '"GREASON"' },
     @{ Name = "invalid gps does not block inertial record start"; Pass = $recordStartCases -match "portion2_auto_record_gps_point\s*\(\s*\)\s*;[\s\S]*?portion2_record_state\s*=\s*1" -and $recordStartCases -notmatch "if\s*\(\s*!?portion2_record_try_gps_point" },
     @{ Name = "record periodic progress emitted"; Pass = $guandaoC -match "\[P2-REC-STATUS\]" },

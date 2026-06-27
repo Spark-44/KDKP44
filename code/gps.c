@@ -62,6 +62,44 @@ uint32 portion2_gps_get_fix_sequence(void)
     return portion2_gps_fix_sequence;
 }
 
+void portion2_gps_note_parsed_update(void)
+{
+    portion2_gps_fix_sequence++;
+}
+
+void gps_serial_diagnostic_task(void)
+{
+    static uint32 last_report_ms = 0;
+    uint32 now_ms = system_getval_ms();
+    gnss_diagnostic_struct diagnostics;
+    char line[384];
+
+    if((uint32)(now_ms - last_report_ms) < 1000U) return;
+    last_report_ms = now_ms;
+    gnss_get_diagnostics(&diagnostics);
+
+    sprintf(line,
+            "[GNSS-DIAG] bytes=%lu lines=%lu rmc=%lu/%lu gga=%lu/%lu ths=%lu/%lu other=%lu parseErr=%lu frameErr=%lu last=%u result=0x%02X fix=%u sats=%u lat7=%ld lon7=%ld\r\n",
+            (unsigned long)diagnostics.rx_byte_count,
+            (unsigned long)diagnostics.line_count,
+            (unsigned long)diagnostics.rmc_ok,
+            (unsigned long)diagnostics.rmc_received,
+            (unsigned long)diagnostics.gga_ok,
+            (unsigned long)diagnostics.gga_received,
+            (unsigned long)diagnostics.ths_ok,
+            (unsigned long)diagnostics.ths_received,
+            (unsigned long)diagnostics.other_received,
+            (unsigned long)diagnostics.parse_error_count,
+            (unsigned long)diagnostics.frame_error_count,
+            (unsigned)diagnostics.last_sentence,
+            (unsigned)diagnostics.last_parse_result,
+            (unsigned)gnss.state,
+            (unsigned)gnss.satellite_used,
+            (long)(gnss.latitude * 10000000.0),
+            (long)(gnss.longitude * 10000000.0));
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
 static long portion2_gps_fixed100(float value)
 {
     if(value >= 0.0f) return (long)(value * 100.0f + 0.5f);
@@ -608,7 +646,6 @@ void trace_gps(guandao_state * e)
 
 void update_gpsinformation(void)
 {
-    portion2_gps_fix_sequence++;
     if(gps_work.gps_current_point >= gps_work.work_gps_length)return;
     gps_work.azimuth_gps = get_two_points_azimuth(gnss.latitude,   gnss.longitude,  gps_work.points[gps_work.gps_current_point  ].lat , gps_work.points[gps_work.gps_current_point  ].lon);
     angle_plan(&gps_work.azimuth_gps);

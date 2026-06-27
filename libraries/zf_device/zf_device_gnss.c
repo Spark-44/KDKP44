@@ -56,6 +56,7 @@
 
 uint8                       gnss_flag = 0;                                  // 1：采集完成等待处理数据 0：没有采集完成
 gnss_info_struct            gnss;                                           // GPS解析之后的数据
+static gnss_diagnostic_struct gnss_diagnostics;
     
 static  uint8               gnss_state = 0;                                 // 1：GPS初始化完成
 static  fifo_struct     gnss_receiver_fifo;                             //
@@ -68,6 +69,41 @@ static  gps_state_enum      gnss_ths_state = GPS_STATE_RECEIVING;           // r
 static  uint8               gps_gga_buffer[GNSS_BUFFER_SIZE];
 static  uint8               gps_rmc_buffer[GNSS_BUFFER_SIZE];
 static  uint8               gps_ths_buffer[GNSS_BUFFER_SIZE];
+static uint8 gps_nmea_checksum_valid (uint8 *buffer)
+{
+    uint8 calculated = 0;
+    uint8 expected;
+    uint8 check_buffer[5] = {'0', 'x', 0x00, 0x00, 0x00};
+    uint8 *cursor;
+    char *checksum_marker;
+
+    if(buffer == NULL || buffer[0] != '$') return 0;
+    checksum_marker = strchr((const char *)buffer, '*');
+    if(checksum_marker == NULL || checksum_marker[1] == '\0' || checksum_marker[2] == '\0') return 0;
+
+    check_buffer[2] = (uint8)checksum_marker[1];
+    check_buffer[3] = (uint8)checksum_marker[2];
+    expected = (uint8)func_str_to_hex((char *)check_buffer);
+    for(cursor = &buffer[1]; cursor < (uint8 *)checksum_marker; cursor++)
+    {
+        calculated ^= *cursor;
+    }
+    return (calculated == expected) ? 1U : 0U;
+}
+
+static uint8 gps_copy_sentence (uint8 *target)
+{
+    uint32 line_length = fifo_used(&gnss_receiver_fifo);
+
+    if(line_length < 7U || line_length >= GNSS_BUFFER_SIZE)
+    {
+        gnss_diagnostics.frame_error_count++;
+        return 0;
+    }
+    fifo_read_buffer(&gnss_receiver_fifo, target, &line_length, FIFO_READ_ONLY);
+    target[line_length] = '\0';
+    return 1;
+}
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     获取指定 ',' 后面的索引
@@ -407,156 +443,136 @@ double get_two_points_azimuth (double latitude1, double longitude1, double latit
 //-------------------------------------------------------------------------------------------------------------------
 uint8 gnss_data_parse (void)
 {
-    uint8 return_state = 0;
-    uint8 check_buffer[5] = {'0', 'x', 0x00, 0x00, 0x00};
-    uint8 bbc_xor_origin = 0;
-    uint8 bbc_xor_calculation = 0;
-    uint32 data_len = 0;
+    uint8 parse_result = 0;
 
-    do
+    if(GPS_STATE_RECEIVED == gnss_rmc_state)
     {
-        if(GPS_STATE_RECEIVED == gnss_rmc_state)
+        gnss_rmc_state = GPS_STATE_PARSING;
+        if(gps_nmea_checksum_valid(gps_rmc_buffer) && gps_gnrmc_parse((char *)gps_rmc_buffer, &gnss))
         {
-            gnss_rmc_state = GPS_STATE_PARSING;
-            strncpy((char *)&check_buffer[2], strchr((const char *)gps_rmc_buffer, '*') + 1, 2);
-            bbc_xor_origin = (uint8)func_str_to_hex((char *)check_buffer);
-            for(bbc_xor_calculation = gps_rmc_buffer[1], data_len = 2; '*' != gps_rmc_buffer[data_len]; data_len ++)
-            {
-                bbc_xor_calculation ^= gps_rmc_buffer[data_len];
-            }
-            if(bbc_xor_calculation != bbc_xor_origin)
-            {
-                // 数据校验失败
-                return_state = 1;
-                break;
-            }
-            
-            gps_gnrmc_parse((char *)gps_rmc_buffer, &gnss);
+            gnss_diagnostics.rmc_ok++;
+            parse_result |= GNSS_PARSE_RMC_OK;
         }
-        gnss_rmc_state = GPS_STATE_RECEIVING;
-        
-        if(GPS_STATE_RECEIVED == gnss_gga_state)
+        else
         {
-            gnss_gga_state = GPS_STATE_PARSING;
-            strncpy((char *)&check_buffer[2], strchr((const char *)gps_gga_buffer, '*') + 1, 2);
-            bbc_xor_origin = (uint8)func_str_to_hex((char *)check_buffer);
-            
-            for(bbc_xor_calculation = gps_gga_buffer[1], data_len = 2; '*' != gps_gga_buffer[data_len]; data_len ++)
-            {
-                bbc_xor_calculation ^= gps_gga_buffer[data_len];
-            }
-            if(bbc_xor_calculation != bbc_xor_origin)
-            {
-                // 数据校验失败
-                return_state = 1;
-                break;
-            }
-            
-            gps_gngga_parse((char *)gps_gga_buffer, &gnss);
+            gnss_diagnostics.parse_error_count++;
         }
-        gnss_gga_state = GPS_STATE_RECEIVING;
-        
-        if(GPS_STATE_RECEIVED == gnss_ths_state)
+    }
+    gnss_rmc_state = GPS_STATE_RECEIVING;
+
+    if(GPS_STATE_RECEIVED == gnss_gga_state)
+    {
+        gnss_gga_state = GPS_STATE_PARSING;
+        if(gps_nmea_checksum_valid(gps_gga_buffer) && gps_gngga_parse((char *)gps_gga_buffer, &gnss))
         {
-            gnss_ths_state = GPS_STATE_PARSING;
-            strncpy((char *)&check_buffer[2], strchr((const char *)gps_ths_buffer, '*') + 1, 2);
-            bbc_xor_origin = (uint8)func_str_to_hex((char *)check_buffer);
-            
-            for(bbc_xor_calculation = gps_ths_buffer[1], data_len = 2; '*' != gps_ths_buffer[data_len]; data_len ++)
-            {
-                bbc_xor_calculation ^= gps_ths_buffer[data_len];
-            }
-            if(bbc_xor_calculation != bbc_xor_origin)
-            {
-                // 数据校验失败
-                return_state = 1;
-                break;
-            }
-            
-            gps_gnths_parse((char *)gps_ths_buffer, &gnss);
+            gnss_diagnostics.gga_ok++;
+            parse_result |= GNSS_PARSE_GGA_OK;
         }
-        gnss_ths_state = GPS_STATE_RECEIVING;
-        
-    }while(0);
-    return return_state;
+        else
+        {
+            gnss_diagnostics.parse_error_count++;
+        }
+    }
+    gnss_gga_state = GPS_STATE_RECEIVING;
+
+    if(GPS_STATE_RECEIVED == gnss_ths_state)
+    {
+        gnss_ths_state = GPS_STATE_PARSING;
+        if(gps_nmea_checksum_valid(gps_ths_buffer) && gps_gnths_parse((char *)gps_ths_buffer, &gnss))
+        {
+            gnss_diagnostics.ths_ok++;
+            parse_result |= GNSS_PARSE_THS_OK;
+        }
+        else
+        {
+            gnss_diagnostics.parse_error_count++;
+        }
+    }
+    gnss_ths_state = GPS_STATE_RECEIVING;
+    gnss_diagnostics.last_parse_result = parse_result;
+    return parse_result;
 }
 
-
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     GPS串口回调函数
-// 参数说明     void
-// 返回参数     void
-// 使用示例     gps_uart_callback();
-// 备注信息     此函数需要在串口接收中断内进行调用
-//-------------------------------------------------------------------------------------------------------------------
 void gnss_uart_callback (void)
 {
     uint8 temp_gps[6];
-    uint32 temp_length = 0;
+    uint32 temp_length;
+    uint8 dat = 0;
+    uint8 received_byte = 0;
+    uint8 sentence_recognized = 0;
 
+    if(!gnss_state) return;
 
-
-
-    if(gnss_state)
+    while(uart_query_byte(GNSS_UART, &dat))
     {
-        uint8 dat;
-        while(uart_query_byte(GNSS_UART, &dat))
-        {
-            fifo_write_buffer(&gnss_receiver_fifo, &dat, 1);
-        }
-        
-        if('\n' == dat)
-        {
-            // 读取前6个数据 用于判断语句类型
-            temp_length = 6;
-            fifo_read_buffer(&gnss_receiver_fifo, temp_gps, &temp_length, FIFO_READ_ONLY);
-            
-            // 根据不同类型将数据拷贝到不同的缓冲区
-            if(0 == strncmp((char *)&temp_gps[3], "RMC", 3))
-            {
-                // 如果没有在解析数据则更新缓冲区的数据
-                if(GPS_STATE_PARSING != gnss_rmc_state)
-                {
-                    gnss_rmc_state = GPS_STATE_RECEIVED;
-                    temp_length = fifo_used(&gnss_receiver_fifo);
-                    fifo_read_buffer(&gnss_receiver_fifo, gps_rmc_buffer, &temp_length, FIFO_READ_AND_CLEAN);
-                }
-            }
-            else if(0 == strncmp((char *)&temp_gps[3], "GGA", 3))
-            {
-                // 如果没有在解析数据则更新缓冲区的数据
-                if(GPS_STATE_PARSING != gnss_gga_state)
-                {
-                    gnss_gga_state = GPS_STATE_RECEIVED;
-                    temp_length = fifo_used(&gnss_receiver_fifo);
-                    fifo_read_buffer(&gnss_receiver_fifo, gps_gga_buffer, &temp_length, FIFO_READ_AND_CLEAN);
-                }
-            }
-            else if(0 == strncmp((char *)&temp_gps[3], "THS", 3))
-            {
-                // 如果没有在解析数据则更新缓冲区的数据
-                if(GPS_STATE_PARSING != gnss_ths_state)
-                {
-                    gnss_ths_state = GPS_STATE_RECEIVED;
-                    temp_length = fifo_used(&gnss_receiver_fifo);
-                    fifo_read_buffer(&gnss_receiver_fifo, gps_ths_buffer, &temp_length, FIFO_READ_AND_CLEAN);
-                }
-            }
-            
-            // 统一将FIFO清空
-            fifo_clear(&gnss_receiver_fifo);
+        received_byte = 1;
+        gnss_diagnostics.rx_byte_count++;
+        fifo_write_buffer(&gnss_receiver_fifo, &dat, 1);
+    }
+    if(!received_byte || '\n' != dat) return;
 
-            gnss_flag = 1;
+    gnss_diagnostics.line_count++;
+    temp_length = fifo_used(&gnss_receiver_fifo);
+    if(temp_length < 7U || temp_length >= GNSS_BUFFER_SIZE)
+    {
+        gnss_diagnostics.frame_error_count++;
+        gnss_diagnostics.last_sentence = GNSS_SENTENCE_OTHER;
+        fifo_clear(&gnss_receiver_fifo);
+        return;
+    }
+
+    temp_length = 6;
+    fifo_read_buffer(&gnss_receiver_fifo, temp_gps, &temp_length, FIFO_READ_ONLY);
+    if(temp_gps[0] == '$' && 0 == strncmp((char *)&temp_gps[3], "RMC", 3))
+    {
+        gnss_diagnostics.last_sentence = GNSS_SENTENCE_RMC;
+        gnss_diagnostics.rmc_received++;
+        if(GPS_STATE_PARSING != gnss_rmc_state && gps_copy_sentence(gps_rmc_buffer))
+        {
+            gnss_rmc_state = GPS_STATE_RECEIVED;
+            sentence_recognized = 1;
         }
+    }
+    else if(temp_gps[0] == '$' && 0 == strncmp((char *)&temp_gps[3], "GGA", 3))
+    {
+        gnss_diagnostics.last_sentence = GNSS_SENTENCE_GGA;
+        gnss_diagnostics.gga_received++;
+        if(GPS_STATE_PARSING != gnss_gga_state && gps_copy_sentence(gps_gga_buffer))
+        {
+            gnss_gga_state = GPS_STATE_RECEIVED;
+            sentence_recognized = 1;
+        }
+    }
+    else if(temp_gps[0] == '$' && 0 == strncmp((char *)&temp_gps[3], "THS", 3))
+    {
+        gnss_diagnostics.last_sentence = GNSS_SENTENCE_THS;
+        gnss_diagnostics.ths_received++;
+        if(GPS_STATE_PARSING != gnss_ths_state && gps_copy_sentence(gps_ths_buffer))
+        {
+            gnss_ths_state = GPS_STATE_RECEIVED;
+            sentence_recognized = 1;
+        }
+    }
+    else
+    {
+        gnss_diagnostics.last_sentence = GNSS_SENTENCE_OTHER;
+        gnss_diagnostics.other_received++;
+    }
+
+    fifo_clear(&gnss_receiver_fifo);
+    if(sentence_recognized)
+    {
+        gnss_flag = 1;
     }
 }
 
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     GPS初始化
-// 参数说明     void
-// 返回参数     void
-// 使用示例     gps_init();
-// 备注信息
+void gnss_get_diagnostics (gnss_diagnostic_struct *diagnostics)
+{
+    if(diagnostics != NULL)
+    {
+        *diagnostics = gnss_diagnostics;
+    }
+}
 //-------------------------------------------------------------------------------------------------------------------
 void gnss_init (gps_device_enum gps_device)
 {

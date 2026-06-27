@@ -60,11 +60,19 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
             TIM_FLAG2 = 0;
             if(gnss_flag)
             {
+                uint8 parse_result;
                 gnss_flag = 0 ;
-                gnss_data_parse();           
+                parse_result = gnss_data_parse();
 //                klm_handle();
-                
-                if(Main_Key_Flag ){update_gpsinformation();}
+
+                if(parse_result & (GNSS_PARSE_RMC_OK | GNSS_PARSE_GGA_OK))
+                {
+                    portion2_gps_note_parsed_update();
+                }
+                if(Main_Key_Flag && (parse_result & GNSS_PARSE_RMC_OK))
+                {
+                    update_gpsinformation();
+                }
             }
         }
     }

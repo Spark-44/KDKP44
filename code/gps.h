@@ -48,6 +48,8 @@ uint8 swtich_gps(void);
 void trace_gps(guandao_state * e);
 
 void update_gpsinformation(void);
+void portion2_gps_note_parsed_update(void);
+void gps_serial_diagnostic_task(void);
 
 int32 double_to_int32(double y);
 

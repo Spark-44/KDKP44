@@ -112,6 +112,36 @@ typedef enum
     GPS_STATE_PARSING,                                                          // ÕýÔÚ½âÎö
 }gps_state_enum;
 
+#define GNSS_PARSE_RMC_OK       (0x01U)
+#define GNSS_PARSE_GGA_OK       (0x02U)
+#define GNSS_PARSE_THS_OK       (0x04U)
+
+typedef enum
+{
+    GNSS_SENTENCE_NONE,
+    GNSS_SENTENCE_RMC,
+    GNSS_SENTENCE_GGA,
+    GNSS_SENTENCE_THS,
+    GNSS_SENTENCE_OTHER,
+}gnss_sentence_type_enum;
+
+typedef struct
+{
+    uint32 rx_byte_count;
+    uint32 line_count;
+    uint32 rmc_received;
+    uint32 gga_received;
+    uint32 ths_received;
+    uint32 other_received;
+    uint32 rmc_ok;
+    uint32 gga_ok;
+    uint32 ths_ok;
+    uint32 parse_error_count;
+    uint32 frame_error_count;
+    uint8 last_sentence;
+    uint8 last_parse_result;
+}gnss_diagnostic_struct;
+
 extern gnss_info_struct gnss;
 extern uint8            gnss_flag;
 
@@ -121,5 +151,6 @@ double      get_two_points_azimuth      (double lat1, double lon1, double lat2, 
 uint8       gnss_data_parse             (void);
 void        gnss_uart_callback          (void);
 void        gnss_init                   (gps_device_enum gps_device);
+void        gnss_get_diagnostics        (gnss_diagnostic_struct *diagnostics);
 
 #endif

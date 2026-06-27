@@ -563,7 +563,7 @@ int core0_main(void)
 //    while(Steer_Mid_Cheak());
     while (TRUE)
     {
-        
+        gps_serial_diagnostic_task();
 
         
 
