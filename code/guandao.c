@@ -1472,6 +1472,20 @@ static uint8 portion2_route_gps_offset(uint8 route_id)
     return (uint8)(route_id * PORTION2_GPS_PER_ROUTE);
 }
 
+static void portion2_translate_route_to_origin(void)
+{
+    int16 length = guandao_clamp_length(portion_2.length_index);
+    state_t start_point;
+
+    if(length <= 0) return;
+    start_point = portion_2.recode_map[0];
+    for(int16 i = 0; i < length; i++)
+    {
+        portion_2.recode_map[i].x -= start_point.x;
+        portion_2.recode_map[i].y -= start_point.y;
+    }
+}
+
 static float portion2_recorded_route_distance(uint8 route_id)
 {
     uint16 length;
@@ -1631,7 +1645,8 @@ static void portion2_record_gps_point(void)
     passage.recode_gpsmap[gps_index].lat = gnss.latitude;
     passage.recode_gpsmap[gps_index].lon = gnss.longitude;
     passage.recode_gpsmap[gps_index].theta = Yaw_1;
-    passage.recode_gpsmap[gps_index].cheak_flag = portion2_route_length[portion2_record_route];
+    passage.recode_gpsmap[gps_index].cheak_flag = (portion2_route_length[portion2_record_route] > 0)
+            ? (int16)portion2_route_length[portion2_record_route] - 1 : 0;
     portion2_route_gps_count[portion2_record_route]++;
     passage.gps_recode_length = portion2_route_gps_offset(portion2_record_route) + portion2_route_gps_count[portion2_record_route];
     portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
@@ -1660,6 +1675,7 @@ void portion2_reset(void)
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
     daoche_flag = 0;
+    portion2_gps_fusion_reset();
     portion2_clear_route();
     out_v_l = 0;
     out_v_r = 0;
@@ -1681,8 +1697,9 @@ void portion2_set_back_channel(uint8 channel)
 void guandao_trace_direct(guandao_state * p)
 {
     update_state(p,&guandao_ecd);
+    if(GPS_WORK_FLAG && p == &portion_2) portion2_gps_fusion_update(p);
     pursuit_contral_mode(p ,&out_v_l ,&out_v_r ,&out_servo);
-    if(GPS_WORK_FLAG)trace_gps(p);
+    if(GPS_WORK_FLAG && p != &portion_2)trace_gps(p);
     follow_points_show(p);
 }
 
@@ -2087,6 +2104,7 @@ void portion2_run_stop(void)
     portion2_final_yaw_align_start_ms = 0;
     portion2_run_final_yaw = 0.0f;
     daoche_flag = 0;
+    portion2_gps_fusion_reset();
     conrtol_mode = GUANDAO;
     out_v_l = 0;
     out_v_r = 0;
@@ -2138,17 +2156,13 @@ void portion2_run_task(void)
                 if(portion2_run_reverse)
                 {
                     GPS_state gps_point = passage.recode_gpsmap[gps_offset + portion_2.gps_recode_length - 1 - i];
-                    if(gps_point.cheak_flag <= 0)
-                    {
-                        gps_point.cheak_flag = 0;
-                    }
-                    else if(gps_point.cheak_flag >= len)
+                    if(gps_point.cheak_flag < 0 || gps_point.cheak_flag >= len)
                     {
                         gps_point.cheak_flag = 0;
                     }
                     else
                     {
-                        gps_point.cheak_flag = len - gps_point.cheak_flag;
+                        gps_point.cheak_flag = len - 1 - gps_point.cheak_flag;
                     }
                     portion_2.recode_gpsmap[i] = gps_point;
                 }
@@ -2158,7 +2172,11 @@ void portion2_run_task(void)
                 }
             }
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
-            portion2_align_route_to_current_yaw(run_start_theta);
+            portion2_translate_route_to_origin();
+            if(!portion2_gps_fusion_prepare(&portion_2))
+            {
+                portion2_align_route_to_current_yaw(run_start_theta);
+            }
             portion2_smooth_reference_route();
             guandao_build_smooth_plan(&portion_2);
             portion2_run_final_yaw = guandao_route_point(&portion_2, guandao_route_length(&portion_2) - 1).theta;
@@ -2197,6 +2215,7 @@ void portion2_run_task(void)
             out_v_l = 0;
             out_v_r = 0;
             out_servo = 0;
+            portion2_gps_fusion_reset();
             portion2_state_flag = 0;
             portion2_run_reverse = 0;
             portion2_run_drive_reverse = 0;
@@ -2241,6 +2260,12 @@ void portion2_run_task(void)
             ips200_show_int(X(6), Y(11), gps_done, 2);
             ips200_show_string(X(9), Y(11), "/");
             ips200_show_int(X(11), Y(11), portion_2.gps_recode_length, 2);
+            ips200_show_string(X(1), Y(12), "GF");
+            ips200_show_string(X(4), Y(12), portion2_gps_fusion_is_ready() ? "ON " : "OFF");
+            ips200_show_string(X(8), Y(12), "V");
+            ips200_show_int(X(10), Y(12), portion2_gps_fusion_last_valid(), 1);
+            ips200_show_string(X(13), Y(12), "SAT");
+            ips200_show_int(X(17), Y(12), portion2_gps_fusion_get_satellites(), 2);
             ips200_show_string(X(1), Y(13), "RX");
             ips200_show_int(X(5), Y(13), portion2_run_last_rx, 3);
             ips200_show_string(X(10), Y(13), "Cnt");
@@ -2249,6 +2274,9 @@ void portion2_run_task(void)
             ips200_show_int(X(6), Y(14), portion2_run_reject_reason, 2);
             ips200_show_string(X(11), Y(14), "REV");
             ips200_show_int(X(16), Y(14), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
+            ips200_show_string(X(1), Y(15), "GERR");
+            ips200_show_float(X(7), Y(15), portion2_gps_fusion_get_error(), 6, 2);
+            ips200_show_string(X(14), Y(15), "m");
         }
     }
 }

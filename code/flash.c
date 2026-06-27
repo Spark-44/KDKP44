@@ -18,7 +18,7 @@ float kd;
 #define FLASH_FINAL_DSTS_MIN             (0.3f)
 #define FLASH_FINAL_DSTS_MAX             (20.0f)
 #define PORTION2_GPS_LAYOUT_INDEX         (1019)
-#define PORTION2_GPS_LAYOUT_MAGIC         (0x50324738U)
+#define PORTION2_GPS_LAYOUT_MAGIC         (0x50324746U)
 
 static float flash_sanitize_float(float value, float fallback, float min_value, float max_value)
 {

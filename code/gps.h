@@ -55,4 +55,13 @@ void GPS_WorkMap_Copy(guandao_state * e);
 void GPS_Points_Show(guandao_state * e);
 
 void GPS_Work_SHOW(void);
+
+void portion2_gps_fusion_reset(void);
+uint8 portion2_gps_fusion_prepare(guandao_state *state);
+void portion2_gps_fusion_update(guandao_state *state);
+uint8 portion2_gps_fusion_is_ready(void);
+uint8 portion2_gps_fusion_last_valid(void);
+uint8 portion2_gps_fusion_get_satellites(void);
+float portion2_gps_fusion_get_error(void);
+float portion2_gps_fusion_get_correction(void);
 #endif /* CODE_GPS_H_ */

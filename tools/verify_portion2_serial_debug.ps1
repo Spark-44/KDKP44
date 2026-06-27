@@ -11,6 +11,8 @@ $displayC = Get-Content -Raw -Path (Join-Path $root "code\display.c")
 $displayH = Get-Content -Raw -Path (Join-Path $root "code\display.h")
 $flashC = Get-Content -Raw -Path (Join-Path $root "code\flash.c")
 $fixedActionC = Get-Content -Raw -Path (Join-Path $root "code\subject_2_fixed_action.c")
+$gpsC = Get-Content -Raw -Path (Join-Path $root "code\gps.c")
+$gpsH = Get-Content -Raw -Path (Join-Path $root "code\gps.h")
 $commonHeadfile = Get-Content -Raw -Path (Join-Path $root "libraries\zf_common\zf_common_headfile.h")
 $debugCodeSubdirMkPath = Join-Path $root "Debug\code\subdir.mk"
 $debugCodeSubdirMk = if(Test-Path $debugCodeSubdirMkPath) { Get-Content -Raw -Path $debugCodeSubdirMkPath } else { "" }
@@ -61,7 +63,7 @@ $checks = @(
     @{ Name = "runtime gps progress emitted"; Pass = $guandaoC -match "\[P2-RUN-GPS\]" },
     @{ Name = "runtime gps bind points are mapped to planned route"; Pass = $guandaoC -match "portion2_plan_index_from_raw_point" -and $guandaoC -match "gps_point\.cheak_flag\s*=\s*portion2_plan_index_from_raw_point" },
     @{ Name = "runtime end event emitted"; Pass = $guandaoC -match "\[P2-RUN-END\]" },
-    @{ Name = "portion2 route is yaw-aligned at run start"; Pass = $guandaoC -match "static\s+void\s+portion2_align_route_to_current_yaw\s*\(" -and $guandaoC -match "run_start_theta\s*=\s*portion2_run_drive_reverse\s*\?\s*Yaw_1\s*\+\s*180\.0f\s*:\s*Yaw_1" -and $guandaoC -match "portion2_align_route_to_current_yaw\s*\(\s*run_start_theta\s*\)" },
+    @{ Name = "portion2 keeps yaw-aligned fallback when gps fusion is unavailable"; Pass = $guandaoC -match "static\s+void\s+portion2_align_route_to_current_yaw\s*\(" -and $guandaoC -match "run_start_theta\s*=\s*portion2_run_drive_reverse\s*\?\s*Yaw_1\s*\+\s*180\.0f\s*:\s*Yaw_1" -and $guandaoC -match "if\s*\(\s*!portion2_gps_fusion_prepare[\s\S]*?portion2_align_route_to_current_yaw\s*\(\s*run_start_theta\s*\)" },
     @{ Name = "route dump serial log emitted"; Pass = $guandaoC -match "\[P2-DUMP\]" },
     @{ Name = "per-route saved flags exist"; Pass = $guandaoC -match "portion2_route_saved_flag\s*\[\s*PORTION2_ROUTE_COUNT\s*\]" },
     @{ Name = "route dump includes saved state"; Pass = $guandaoC -match "saved=%s" },
@@ -96,6 +98,16 @@ $checks = @(
     @{ Name = "gps recording stops at route capacity"; Pass = $guandaoC -match "gps_count\s*>=\s*PORTION2_GPS_PER_ROUTE" },
     @{ Name = "flash stores gps8 layout marker"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC" -and $flashC -match "flash_union_buffer\s*\[\s*PORTION2_GPS_LAYOUT_INDEX\s*\]\.uint32_type\s*=\s*PORTION2_GPS_LAYOUT_MAGIC" },
     @{ Name = "legacy gps layout is invalidated"; Pass = $flashC -match "gps_layout_valid" -and $flashC -match "!gps_layout_valid[\s\S]*?portion2_route_gps_count\s*\[\s*i\s*\]\s*=\s*0" },
+    @{ Name = "portion2 gps fusion API declared"; Pass = $gpsH -match "uint8\s+portion2_gps_fusion_prepare" -and $gpsH -match "void\s+portion2_gps_fusion_update" -and $gpsH -match "void\s+portion2_gps_fusion_reset" },
+    @{ Name = "gps fusion validates fix and satellites"; Pass = $gpsC -match "gnss\.state" -and $gpsC -match "gnss\.satellite_used\s*<\s*PORTION2_GPS_FUSION_MIN_SATELLITES" },
+    @{ Name = "gps fusion rejects repeated and large-error fixes"; Pass = $gpsC -match "PORTION2_GPS_FUSION_REPEAT_DISTANCE" -and $gpsC -match "PORTION2_GPS_FUSION_MAX_ERROR\s+\(3\.0f\)" },
+    @{ Name = "gps fusion correction is filtered and capped"; Pass = $gpsC -match "PORTION2_GPS_FUSION_GAIN\s+\(0\.10f\)" -and $gpsC -match "PORTION2_GPS_FUSION_MAX_CORRECTION\s+\(0\.10f\)" -and $gpsC -match "state->current_state\.x\s*\+=\s*correction_x" -and $gpsC -match "state->current_state\.y\s*\+=\s*correction_y" },
+    @{ Name = "gps fusion emits serial diagnostics"; Pass = $gpsC -match "\[P2-GPS-FUSION\]" },
+    @{ Name = "recorded gps binds zero-based raw point"; Pass = $guandaoC -match "cheak_flag\s*=\s*\(portion2_route_length\[portion2_record_route\]\s*>\s*0\)\s*\?\s*\(int16\)portion2_route_length\[portion2_record_route\]\s*-\s*1\s*:\s*0" },
+    @{ Name = "new fusion gps layout marker invalidates old binding"; Pass = $flashC -match "PORTION2_GPS_LAYOUT_MAGIC\s+\(0x50324746U\)" },
+    @{ Name = "gps-ready run keeps recorded route orientation"; Pass = $guandaoC -match "if\s*\(\s*!portion2_gps_fusion_prepare\s*\(\s*&portion_2\s*\)\s*\)\s*\{[\s\S]*?portion2_align_route_to_current_yaw" },
+    @{ Name = "gps fusion updates before pursuit steering"; Pass = $guandaoC -match "update_state\s*\(\s*p[\s\S]*?portion2_gps_fusion_update\s*\(\s*p\s*\)[\s\S]*?pursuit_contral_mode" },
+    @{ Name = "run screen shows gps fusion state"; Pass = $guandaoC -match '"GF"' -and $guandaoC -match "portion2_gps_fusion_get_error" },
     @{ Name = "route run requires enough inertial points"; Pass = $guandaoC -match "portion2_route_length\s*\[\s*route_id\s*\]\s*<\s*required" },
     @{ Name = "route run requires enough gps points"; Pass = $guandaoC -match "portion2_route_gps_count\s*\[\s*route_id\s*\]\s*<\s*required" },
     @{ Name = "incomplete route rejected before run"; Pass = $guandaoC -match "portion2_run_reject_reason\s*=\s*4" -and $guandaoC -match "if\s*\(\s*!\s*portion2_route_ready_for_run\s*\(\s*route_id\s*\)\s*\)" },
