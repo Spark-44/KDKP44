@@ -17,6 +17,8 @@ float kd;
 #define FLASH_FINAL_DSTS_DEFAULT         (3.0f)
 #define FLASH_FINAL_DSTS_MIN             (0.3f)
 #define FLASH_FINAL_DSTS_MAX             (20.0f)
+#define PORTION2_GPS_LAYOUT_INDEX         (1019)
+#define PORTION2_GPS_LAYOUT_MAGIC         (0x50324738U)
 
 static float flash_sanitize_float(float value, float fallback, float min_value, float max_value)
 {
@@ -171,6 +173,7 @@ void Flash_Write_passage_points(void)
             flash_union_buffer[gps_info_index + i * 4 + 2].float_type = passage.recode_gpsmap[i].theta;
             flash_union_buffer[gps_info_index + i * 4 + 3].int16_type = passage.recode_gpsmap[i].cheak_flag;
         }
+        flash_union_buffer[PORTION2_GPS_LAYOUT_INDEX].uint32_type = PORTION2_GPS_LAYOUT_MAGIC;
     }
 
     if(flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE))
@@ -185,10 +188,12 @@ void Flash_Read_passage_points(void)
     int get_max_storage = 0;
     int route_info_index;
     int gps_info_index;
+    uint8 gps_layout_valid = 0;
     if(flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE))
     {
         flash_buffer_clear();
         flash_read_page_to_buffer(FLASH_SECTION_INDEX, RECODE_PASSAGE);
+        gps_layout_valid = (flash_union_buffer[PORTION2_GPS_LAYOUT_INDEX].uint32_type == PORTION2_GPS_LAYOUT_MAGIC) ? 1 : 0;
         passage.length_index = flash_union_buffer[0].int16_type;
         get_max_storage =2 * passage.length_index +2;
         for(int i = 2 , j = 0;i < get_max_storage ; i += 2 , j++)
@@ -208,11 +213,11 @@ void Flash_Read_passage_points(void)
                 portion2_route_length[i] = flash_union_buffer[route_info_index + i].int16_type;
                 portion2_route_gps_count[i] = flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT + i].int16_type;
                 if(portion2_route_length[i] > PORTION2_ROUTE_MAX_POINTS) portion2_route_length[i] = 0;
-                if(portion2_route_gps_count[i] > portion2_route_required_gps_count[i]) portion2_route_gps_count[i] = 0;
+                if(!gps_layout_valid || portion2_route_gps_count[i] > PORTION2_GPS_PER_ROUTE) portion2_route_gps_count[i] = 0;
             }
-            passage.gps_recode_length = flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 2].int16_type;
+            passage.gps_recode_length = gps_layout_valid ? flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 2].int16_type : 0;
             gps_info_index = route_info_index + PORTION2_ROUTE_COUNT * 2 + 1;
-            for(uint8 i = 0; i < PORTION2_TOTAL_GPS_COUNT; i++)
+            for(uint8 i = 0; gps_layout_valid && i < PORTION2_TOTAL_GPS_COUNT; i++)
             {
                 passage.recode_gpsmap[i].lat = int32_to_double(flash_union_buffer[gps_info_index + i * 4].int32_type);
                 passage.recode_gpsmap[i].lon = int32_to_double(flash_union_buffer[gps_info_index + i * 4 + 1].int32_type);

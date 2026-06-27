@@ -183,7 +183,7 @@ static void portion2_serial_write_state_point(const char *prefix, uint8 route_id
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), point.theta);
     pos += sprintf(&line[pos], " gps=%u/%u\r\n",
                    (unsigned)portion2_route_gps_count[route_id],
-                   (unsigned)portion2_route_required_gps(route_id));
+                   (unsigned)PORTION2_GPS_PER_ROUTE);
     if(pos > 0)
     {
         uart_write_string(DEBUG_UART_INDEX, line);
@@ -208,7 +208,7 @@ static void portion2_serial_write_gps_point(const char *prefix, uint8 route_id, 
     pos += sprintf(&line[pos], " bind_pt=%d gps=%u/%u\r\n",
                    (int)point.cheak_flag,
                    (unsigned)portion2_route_gps_count[route_id],
-                   (unsigned)portion2_route_required_gps(route_id));
+                   (unsigned)PORTION2_GPS_PER_ROUTE);
     if(pos > 0)
     {
         uart_write_string(DEBUG_UART_INDEX, line);
@@ -227,7 +227,7 @@ static void portion2_serial_log_record_event(const char *event)
             (unsigned)portion2_route_length[portion2_record_route],
             (unsigned)PORTION2_ROUTE_MAX_POINTS,
             (unsigned)portion2_route_gps_count[portion2_record_route],
-            (unsigned)portion2_route_required_gps(portion2_record_route),
+            (unsigned)PORTION2_GPS_PER_ROUTE,
             portion2_route_saved_flag[portion2_record_route] ? "YES" : "NO");
     uart_write_string(DEBUG_UART_INDEX, line);
 }
@@ -1468,14 +1468,8 @@ static uint8 portion2_route_ready_for_run(uint8 route_id)
 
 static uint8 portion2_route_gps_offset(uint8 route_id)
 {
-    uint8 offset = 0;
-
-    if(route_id > PORTION2_ROUTE_COUNT) route_id = PORTION2_ROUTE_COUNT;
-    for(uint8 i = 0; i < route_id; i++)
-    {
-        offset += portion2_route_required_gps(i);
-    }
-    return offset;
+    if(route_id >= PORTION2_ROUTE_COUNT) return (uint8)PORTION2_TOTAL_GPS_COUNT;
+    return (uint8)(route_id * PORTION2_GPS_PER_ROUTE);
 }
 
 static float portion2_recorded_route_distance(uint8 route_id)
@@ -1519,7 +1513,7 @@ static void portion2_serial_log_record_status(void)
                    (unsigned)portion2_route_length[route_id],
                    (unsigned)PORTION2_ROUTE_MAX_POINTS,
                    (unsigned)portion2_route_gps_count[route_id],
-                   (unsigned)portion2_route_required_gps(route_id));
+                   (unsigned)PORTION2_GPS_PER_ROUTE);
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_recorded_route_distance(route_id));
     pos += sprintf(&line[pos], " step=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), recode_threshold);
@@ -1545,7 +1539,7 @@ void portion2_serial_dump_routes(void)
                 (unsigned)(i + 1),
                 (unsigned)portion2_route_length[i],
                 (unsigned)portion2_route_gps_count[i],
-                (unsigned)portion2_route_required_gps(i),
+                (unsigned)PORTION2_GPS_PER_ROUTE,
                 portion2_route_saved_flag[i] ? "YES" : "NO");
         uart_write_string(DEBUG_UART_INDEX, line);
     }
@@ -1573,14 +1567,14 @@ void portion2_serial_dump_route(uint8 route_id)
             (unsigned)(route_id + 1),
             (unsigned)len,
             (unsigned)portion2_route_gps_count[route_id],
-            (unsigned)portion2_route_required_gps(route_id));
+            (unsigned)PORTION2_GPS_PER_ROUTE);
     uart_write_string(DEBUG_UART_INDEX, line);
 
     for(uint16 i = 0; i < len; i++)
     {
         portion2_serial_write_state_point("[P2-DUMP]", route_id, i, passage.recode_map[offset + i]);
     }
-    for(uint8 i = 0; i < portion2_route_gps_count[route_id] && i < portion2_route_required_gps(route_id); i++)
+    for(uint8 i = 0; i < portion2_route_gps_count[route_id] && i < PORTION2_GPS_PER_ROUTE; i++)
     {
         portion2_serial_write_gps_point("[P2-DUMP-GPS]", route_id, i, passage.recode_gpsmap[portion2_route_gps_offset(route_id) + i]);
     }
@@ -1629,10 +1623,9 @@ static void portion2_record_gps_point(void)
 {
     uint8 gps_count = portion2_route_gps_count[portion2_record_route];
     uint8 gps_index = portion2_route_gps_offset(portion2_record_route) + gps_count;
-    uint8 gps_required = portion2_route_required_gps(portion2_record_route);
 
     if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
-    if(gps_count >= gps_required) return;
+    if(gps_count >= PORTION2_GPS_PER_ROUTE) return;
     if(gps_index >= MAX_GPS_RECODE) return;
 
     passage.recode_gpsmap[gps_index].lat = gnss.latitude;
@@ -1652,7 +1645,7 @@ static void portion2_auto_record_gps_point(void)
 {
     if(!GPS_WORK_FLAG) return;
     if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
-    if(portion2_route_gps_count[portion2_record_route] >= portion2_route_required_gps(portion2_record_route)) return;
+    if(portion2_route_gps_count[portion2_record_route] >= PORTION2_GPS_PER_ROUTE) return;
 
     if(!portion2_gps_auto_has_point[portion2_record_route] ||
        get_distance(passage.current_state, portion2_gps_auto_last_state[portion2_record_route]) >= PORTION2_AUTO_GPS_RECORD_DIST)
@@ -1995,7 +1988,7 @@ void portion2_record_task(void)
         ips200_show_string(X(1), Y(4), "GPS");
         ips200_show_int(X(6), Y(4), portion2_route_gps_count[route_id], 2);
         ips200_show_string(X(9), Y(4), "/");
-        ips200_show_int(X(11), Y(4), portion2_route_required_gps(route_id), 2);
+        ips200_show_int(X(11), Y(4), PORTION2_GPS_PER_ROUTE, 2);
         ips200_show_string(X(1), Y(5), "DIST");
         ips200_show_float(X(7), Y(5), portion2_recorded_route_distance(route_id), 6, 2);
         ips200_show_string(X(14), Y(5), "m");
@@ -2135,9 +2128,9 @@ void portion2_run_task(void)
             }
             portion_2.length_index = len;
             portion_2.gps_recode_length = portion2_route_gps_count[portion2_selected_route];
-            if(portion_2.gps_recode_length > portion2_route_required_gps(portion2_selected_route))
+            if(portion_2.gps_recode_length > PORTION2_GPS_PER_ROUTE)
             {
-                portion_2.gps_recode_length = portion2_route_required_gps(portion2_selected_route);
+                portion_2.gps_recode_length = PORTION2_GPS_PER_ROUTE;
             }
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {

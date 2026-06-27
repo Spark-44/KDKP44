@@ -8,7 +8,7 @@
 #define MAX_GPS_RECODE                         72         
 #define PORTION2_ROUTE_COUNT                   9
 #define PORTION2_ROUTE_MAX_POINTS              39
-#define PORTION2_GPS_PER_ROUTE                 3
+#define PORTION2_GPS_PER_ROUTE                 8
 #define PORTION2_TOTAL_GPS_COUNT               72
 #define PORTION2_ROUTE_1                       0
 #define PORTION2_ROUTE_2                       1
