@@ -4,14 +4,24 @@
 #define CODE_GUANDAO_H_
 
 #define ONE_TICK_DISTANCE                      0.000378f
-#define MAX_LENGTH_INDEX                       400        
-#define MAX_GPS_RECODE                         126
 #define PORTION2_ROUTE_COUNT                   9
-#define PORTION2_ROUTE_MAX_POINTS              39
-#define PORTION2_GPS_PER_ROUTE                 14
-#define PORTION2_TOTAL_GPS_COUNT               126
+#define PORTION2_ROUTE_MAX_POINTS              49
+#define PORTION2_TOTAL_ROUTE_POINTS            441
+#define MAX_LENGTH_INDEX                       441
+#define PORTION2_GPS_PER_ROUTE                 20
+#define PORTION2_TOTAL_GPS_COUNT               180
+#define MAX_GPS_RECODE                         180
+#if PORTION2_TOTAL_ROUTE_POINTS != PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS
+#error "PORTION2_TOTAL_ROUTE_POINTS must match route count and per-route capacity"
+#endif
+#if MAX_LENGTH_INDEX < PORTION2_TOTAL_ROUTE_POINTS
+#error "MAX_LENGTH_INDEX is too small for portion-2 routes"
+#endif
 #if PORTION2_TOTAL_GPS_COUNT != PORTION2_ROUTE_COUNT * PORTION2_GPS_PER_ROUTE
 #error "PORTION2_TOTAL_GPS_COUNT must match route count and per-route capacity"
+#endif
+#if MAX_GPS_RECODE < PORTION2_TOTAL_GPS_COUNT
+#error "MAX_GPS_RECODE is too small for portion-2 GPS records"
 #endif
 #define PORTION2_ROUTE_1                       0
 #define PORTION2_ROUTE_2                       1

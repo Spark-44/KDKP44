@@ -17,10 +17,15 @@ float kd;
 #define FLASH_FINAL_DSTS_DEFAULT         (3.0f)
 #define FLASH_FINAL_DSTS_MIN             (0.3f)
 #define FLASH_FINAL_DSTS_MAX             (20.0f)
-#define PORTION2_GPS_LAYOUT_MAGIC         (0x5032474EU)
+#define PORTION2_GPS_LAYOUT_MAGIC         (0x50324754U)
 #define PORTION2_GPS_PAGE_MAGIC_INDEX     (0)
 #define PORTION2_GPS_PAGE_TOTAL_INDEX     (1)
 #define PORTION2_GPS_PAGE_DATA_INDEX      (2)
+#define PORTION2_ROUTE_METADATA_WORDS      (PORTION2_ROUTE_COUNT * 2)
+#define PORTION2_INERTIAL_PAGE_WORDS       (2 * PORTION2_TOTAL_ROUTE_POINTS + 2 + PORTION2_ROUTE_METADATA_WORDS)
+#if PORTION2_INERTIAL_PAGE_WORDS > 1020
+#error "Portion-2 inertial records exceed one flash page"
+#endif
 #if PORTION2_GPS_PAGE_DATA_INDEX + PORTION2_TOTAL_GPS_COUNT * 4 > 1020
 #error "Portion-2 GPS records exceed one flash page"
 #endif
