@@ -488,6 +488,7 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
 {
     int16 length = guandao_clamp_length(portion_2.length_index);
     state_t start_point;
+    float route_start_yaw;
     float yaw_delta;
     float yaw_rad;
     float cos_yaw;
@@ -497,7 +498,12 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
 
     angle_plan(&run_start_theta);
     start_point = portion_2.recode_map[0];
-    yaw_delta = guandao_normalize_angle(run_start_theta - start_point.theta);
+    route_start_yaw = start_point.theta;
+    if(length > 1)
+    {
+        route_start_yaw = guandao_segment_yaw(portion_2.recode_map[0], portion_2.recode_map[1]);
+    }
+    yaw_delta = guandao_normalize_angle(run_start_theta - route_start_yaw);
     yaw_rad = yaw_delta / 180.0f * M_PI;
     cos_yaw = cosf(yaw_rad);
     sin_yaw = sinf(yaw_rad);
@@ -506,11 +512,22 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
     {
         float rel_x = portion_2.recode_map[i].x - start_point.x;
         float rel_y = portion_2.recode_map[i].y - start_point.y;
-        float old_theta = portion_2.recode_map[i].theta;
 
         portion_2.recode_map[i].x = rel_x * cos_yaw + rel_y * sin_yaw;
         portion_2.recode_map[i].y = rel_y * cos_yaw - rel_x * sin_yaw;
-        portion_2.recode_map[i].theta = guandao_normalize_angle(old_theta + yaw_delta);
+    }
+
+    for(int16 i = 0; i < length - 1; i++)
+    {
+        portion_2.recode_map[i].theta = guandao_segment_yaw(portion_2.recode_map[i], portion_2.recode_map[i + 1]);
+    }
+    if(length > 1)
+    {
+        portion_2.recode_map[length - 1].theta = guandao_segment_yaw(portion_2.recode_map[length - 2], portion_2.recode_map[length - 1]);
+    }
+    else
+    {
+        portion_2.recode_map[0].theta = run_start_theta;
     }
 
     for(uint8 i = 0; i < portion_2.gps_recode_length && i < MAX_GPS_RECODE; i++)
@@ -2208,6 +2225,8 @@ void portion2_run_task(void)
 {
     uint16 offset;
     uint16 len;
+    uint8 gps_prepare_ready;
+    uint8 gps_startup_result;
     float run_start_theta;
 
     switch(portion2_state_flag)
@@ -2266,11 +2285,9 @@ void portion2_run_task(void)
             }
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
             portion2_translate_route_to_origin();
-            if(!portion2_gps_fusion_prepare(&portion_2))
-            {
-                portion2_align_route_to_current_yaw(run_start_theta);
-            }
+            portion2_align_route_to_current_yaw(run_start_theta);
             portion2_smooth_reference_route();
+            gps_prepare_ready = portion2_gps_fusion_prepare(&portion_2);
             guandao_build_smooth_plan(&portion_2);
             portion2_run_final_yaw = guandao_route_point(&portion_2, guandao_route_length(&portion_2) - 1).theta;
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
@@ -2281,9 +2298,19 @@ void portion2_run_task(void)
             }
             portion2_run_last_report_point = -1;
             portion2_run_last_report_gps = 255;
-            portion2_state_flag = 2;
+            portion2_state_flag = gps_prepare_ready ? 4 : 2;
             portion2_serial_log_run_point_event(1);
             portion2_serial_log_run_gps_event(1);
+            break;
+        case 4:
+            out_v_l = 0;
+            out_v_r = 0;
+            out_servo = 0;
+            gps_startup_result = portion2_gps_fusion_startup_update(&portion_2);
+            if(gps_startup_result != PORTION2_GPS_STARTUP_WAIT)
+            {
+                portion2_state_flag = 2;
+            }
             break;
         case 2:
             guandao_trace_direct(&portion_2);

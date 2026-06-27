@@ -6,6 +6,9 @@
 #define GPS_WORK_NUM                            30
 #define GPS_WORK_FLAG                            1
 #define GPS_SWITCH_DISTANCE                  2.0f
+#define PORTION2_GPS_STARTUP_WAIT             0U
+#define PORTION2_GPS_STARTUP_READY            1U
+#define PORTION2_GPS_STARTUP_FALLBACK         2U
 
 typedef struct
 {
@@ -58,6 +61,7 @@ void GPS_Work_SHOW(void);
 
 void portion2_gps_fusion_reset(void);
 uint8 portion2_gps_fusion_prepare(guandao_state *state);
+uint8 portion2_gps_fusion_startup_update(guandao_state *state);
 void portion2_gps_fusion_update(guandao_state *state);
 uint8 portion2_gps_fusion_is_ready(void);
 uint8 portion2_gps_fusion_last_valid(void);

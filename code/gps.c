@@ -15,6 +15,10 @@ Lost_Point lost_judge;
 #define PORTION2_GPS_FUSION_MIN_SCALE         (0.40f)
 #define PORTION2_GPS_FUSION_MAX_SCALE         (2.50f)
 #define PORTION2_GPS_FUSION_MAX_RMS_ERROR     (2.00f)
+#define PORTION2_GPS_STARTUP_REQUIRED_SAMPLES (3U)
+#define PORTION2_GPS_STARTUP_TIMEOUT_MS       (6000U)
+#define PORTION2_GPS_STARTUP_STABILITY_M      (1.0f)
+#define PORTION2_GPS_FUSION_MAX_LARGE_ERRORS  (3U)
 #define PORTION2_GPS_METERS_PER_DEGREE        (111320.0f)
 
 typedef struct
@@ -24,12 +28,19 @@ typedef struct
     uint8 satellites;
     uint8 has_last_coordinate;
     uint8 last_reason;
+    uint8 startup_active;
+    uint8 startup_sample_count;
+    uint8 startup_has_last_coordinate;
+    uint8 large_error_count;
     uint32 last_sequence;
     uint32 last_log_ms;
+    uint32 startup_start_ms;
     double origin_lat;
     double origin_lon;
     double last_lat;
     double last_lon;
+    double startup_last_lat;
+    double startup_last_lon;
     float longitude_scale;
     float transform_a;
     float transform_b;
@@ -39,6 +50,8 @@ typedef struct
     float gps_y;
     float error;
     float correction;
+    float startup_sum_x;
+    float startup_sum_y;
 } portion2_gps_fusion_state_t;
 
 static volatile uint32 portion2_gps_fix_sequence = 0;
@@ -93,6 +106,10 @@ static void portion2_gps_fusion_log(guandao_state *state)
     portion2_gps_append_fixed100(line, &pos, portion2_gps_fusion.error);
     pos += sprintf(&line[pos], " corr=");
     portion2_gps_append_fixed100(line, &pos, portion2_gps_fusion.correction);
+    pos += sprintf(&line[pos], " cal=%u/%u large=%u",
+                   (unsigned)portion2_gps_fusion.startup_sample_count,
+                   (unsigned)PORTION2_GPS_STARTUP_REQUIRED_SAMPLES,
+                   (unsigned)portion2_gps_fusion.large_error_count);
     pos += sprintf(&line[pos], "\r\n");
     uart_write_string(DEBUG_UART_INDEX, line);
 }
@@ -111,12 +128,19 @@ void portion2_gps_fusion_reset(void)
     portion2_gps_fusion.satellites = 0;
     portion2_gps_fusion.has_last_coordinate = 0;
     portion2_gps_fusion.last_reason = 1;
+    portion2_gps_fusion.startup_active = 0;
+    portion2_gps_fusion.startup_sample_count = 0;
+    portion2_gps_fusion.startup_has_last_coordinate = 0;
+    portion2_gps_fusion.large_error_count = 0;
     portion2_gps_fusion.last_sequence = portion2_gps_fix_sequence;
     portion2_gps_fusion.last_log_ms = 0;
+    portion2_gps_fusion.startup_start_ms = 0;
     portion2_gps_fusion.origin_lat = 0.0;
     portion2_gps_fusion.origin_lon = 0.0;
     portion2_gps_fusion.last_lat = 0.0;
     portion2_gps_fusion.last_lon = 0.0;
+    portion2_gps_fusion.startup_last_lat = 0.0;
+    portion2_gps_fusion.startup_last_lon = 0.0;
     portion2_gps_fusion.longitude_scale = 0.0f;
     portion2_gps_fusion.transform_a = 0.0f;
     portion2_gps_fusion.transform_b = 0.0f;
@@ -126,6 +150,8 @@ void portion2_gps_fusion_reset(void)
     portion2_gps_fusion.gps_y = 0.0f;
     portion2_gps_fusion.error = 0.0f;
     portion2_gps_fusion.correction = 0.0f;
+    portion2_gps_fusion.startup_sum_x = 0.0f;
+    portion2_gps_fusion.startup_sum_y = 0.0f;
 }
 
 uint8 portion2_gps_fusion_prepare(guandao_state *state)
@@ -250,10 +276,114 @@ uint8 portion2_gps_fusion_prepare(guandao_state *state)
     }
 
     portion2_gps_fusion.ready = 1;
+    portion2_gps_fusion.startup_active = 1;
+    portion2_gps_fusion.startup_start_ms = system_getval_ms();
+    portion2_gps_fusion.last_sequence = portion2_gps_fix_sequence - 1U;
     portion2_gps_fusion.last_reason = 0;
     portion2_gps_fusion.satellites = gnss.satellite_used;
     portion2_gps_fusion_log(state);
     return 1;
+}
+
+uint8 portion2_gps_fusion_startup_update(guandao_state *state)
+{
+    uint32 now_ms = system_getval_ms();
+    uint32 sequence = portion2_gps_fix_sequence;
+    float east;
+    float north;
+    float sample_x;
+    float sample_y;
+    float mean_x;
+    float mean_y;
+
+    if(state == 0 || !portion2_gps_fusion.ready) return PORTION2_GPS_STARTUP_FALLBACK;
+    if(!portion2_gps_fusion.startup_active) return PORTION2_GPS_STARTUP_READY;
+    if((uint32)(now_ms - portion2_gps_fusion.startup_start_ms) >= PORTION2_GPS_STARTUP_TIMEOUT_MS)
+    {
+        portion2_gps_fusion.ready = 0;
+        portion2_gps_fusion.last_valid = 0;
+        portion2_gps_fusion.startup_active = 0;
+        portion2_gps_fusion.last_reason = 15;
+        portion2_gps_fusion_log(state);
+        return PORTION2_GPS_STARTUP_FALLBACK;
+    }
+    if(sequence == portion2_gps_fusion.last_sequence) return PORTION2_GPS_STARTUP_WAIT;
+    portion2_gps_fusion.last_sequence = sequence;
+    portion2_gps_fusion.satellites = gnss.satellite_used;
+
+    if(!gnss.state || gnss.satellite_used < PORTION2_GPS_FUSION_MIN_SATELLITES ||
+       gnss.latitude == 0.0 || gnss.longitude == 0.0)
+    {
+        portion2_gps_fusion.last_reason = (!gnss.state) ? 2 :
+                ((gnss.satellite_used < PORTION2_GPS_FUSION_MIN_SATELLITES) ? 3 : 4);
+        portion2_gps_fusion_log(state);
+        return PORTION2_GPS_STARTUP_WAIT;
+    }
+    if(portion2_gps_fusion.startup_has_last_coordinate)
+    {
+        float last_east = (float)((gnss.longitude - portion2_gps_fusion.startup_last_lon)
+                * (double)portion2_gps_fusion.longitude_scale);
+        float last_north = (float)((gnss.latitude - portion2_gps_fusion.startup_last_lat)
+                * (double)PORTION2_GPS_METERS_PER_DEGREE);
+        if(hypotf(last_east, last_north) < PORTION2_GPS_FUSION_REPEAT_DISTANCE)
+        {
+            portion2_gps_fusion.last_reason = 5;
+            portion2_gps_fusion_log(state);
+            return PORTION2_GPS_STARTUP_WAIT;
+        }
+    }
+    portion2_gps_fusion.startup_last_lat = gnss.latitude;
+    portion2_gps_fusion.startup_last_lon = gnss.longitude;
+    portion2_gps_fusion.startup_has_last_coordinate = 1;
+
+    portion2_gps_to_local_meters(gnss.latitude, gnss.longitude, &east, &north);
+    sample_x = portion2_gps_fusion.transform_a * east
+            - portion2_gps_fusion.transform_b * north
+            + portion2_gps_fusion.transform_tx;
+    sample_y = portion2_gps_fusion.transform_b * east
+            + portion2_gps_fusion.transform_a * north
+            + portion2_gps_fusion.transform_ty;
+
+    if(portion2_gps_fusion.startup_sample_count > 0)
+    {
+        mean_x = portion2_gps_fusion.startup_sum_x / (float)portion2_gps_fusion.startup_sample_count;
+        mean_y = portion2_gps_fusion.startup_sum_y / (float)portion2_gps_fusion.startup_sample_count;
+        if(hypotf(sample_x - mean_x, sample_y - mean_y) > PORTION2_GPS_STARTUP_STABILITY_M)
+        {
+            portion2_gps_fusion.startup_sample_count = 0;
+            portion2_gps_fusion.startup_sum_x = 0.0f;
+            portion2_gps_fusion.startup_sum_y = 0.0f;
+        }
+    }
+    portion2_gps_fusion.startup_sum_x += sample_x;
+    portion2_gps_fusion.startup_sum_y += sample_y;
+    portion2_gps_fusion.startup_sample_count++;
+    portion2_gps_fusion.gps_x = sample_x;
+    portion2_gps_fusion.gps_y = sample_y;
+    portion2_gps_fusion.last_reason = 20;
+    portion2_gps_fusion_log(state);
+
+    if(portion2_gps_fusion.startup_sample_count < PORTION2_GPS_STARTUP_REQUIRED_SAMPLES)
+    {
+        return PORTION2_GPS_STARTUP_WAIT;
+    }
+
+    mean_x = portion2_gps_fusion.startup_sum_x / (float)portion2_gps_fusion.startup_sample_count;
+    mean_y = portion2_gps_fusion.startup_sum_y / (float)portion2_gps_fusion.startup_sample_count;
+    portion2_gps_fusion.transform_tx += state->current_state.x - mean_x;
+    portion2_gps_fusion.transform_ty += state->current_state.y - mean_y;
+    portion2_gps_fusion.gps_x = state->current_state.x;
+    portion2_gps_fusion.gps_y = state->current_state.y;
+    portion2_gps_fusion.error = 0.0f;
+    portion2_gps_fusion.correction = 0.0f;
+    portion2_gps_fusion.startup_active = 0;
+    portion2_gps_fusion.has_last_coordinate = 1;
+    portion2_gps_fusion.last_lat = gnss.latitude;
+    portion2_gps_fusion.last_lon = gnss.longitude;
+    portion2_gps_fusion.last_valid = 1;
+    portion2_gps_fusion.last_reason = 0;
+    portion2_gps_fusion_log(state);
+    return PORTION2_GPS_STARTUP_READY;
 }
 
 void portion2_gps_fusion_update(guandao_state *state)
@@ -267,7 +397,7 @@ void portion2_gps_fusion_update(guandao_state *state)
     float correction_y;
     float correction_scale;
 
-    if(state == 0 || !portion2_gps_fusion.ready) return;
+    if(state == 0 || !portion2_gps_fusion.ready || portion2_gps_fusion.startup_active) return;
     if(sequence == portion2_gps_fusion.last_sequence) return;
     portion2_gps_fusion.last_sequence = sequence;
     portion2_gps_fusion.last_valid = 0;
@@ -322,10 +452,18 @@ void portion2_gps_fusion_update(guandao_state *state)
     portion2_gps_fusion.error = hypotf(error_x, error_y);
     if(portion2_gps_fusion.error > PORTION2_GPS_FUSION_MAX_ERROR)
     {
+        portion2_gps_fusion.large_error_count++;
         portion2_gps_fusion.last_reason = 6;
+        if(portion2_gps_fusion.large_error_count >= PORTION2_GPS_FUSION_MAX_LARGE_ERRORS)
+        {
+            portion2_gps_fusion.ready = 0;
+            portion2_gps_fusion.last_valid = 0;
+            portion2_gps_fusion.last_reason = 7;
+        }
         portion2_gps_fusion_log(state);
         return;
     }
+    portion2_gps_fusion.large_error_count = 0;
 
     correction_x = error_x * PORTION2_GPS_FUSION_GAIN;
     correction_y = error_y * PORTION2_GPS_FUSION_GAIN;
