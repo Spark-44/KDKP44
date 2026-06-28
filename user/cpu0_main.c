@@ -311,7 +311,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
 
-        if(data >= 'A' && data <= 'F')
+        if(data >= 'A' && data <= 'G')
         {
             Portion2_Aux_Start(data - 'A' + 1);
         }
@@ -328,7 +328,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
 
-        if(data >= 'a' && data <= 'f')
+        if(data >= 'a' && data <= 'g')
         {
             Portion2_Aux_Start(data - 'a' + 1);
         }
