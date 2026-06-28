@@ -51,6 +51,11 @@ static uint8 portion2_route_saved_flag[PORTION2_ROUTE_COUNT] = {0};
 static uint8 portion2_serial_trace_enabled = 0;
 static int16 portion2_run_last_report_point = -1;
 static uint8 portion2_run_last_report_gps = 255;
+static int16 portion2_track_first_bad_raw = -1;
+static int16 portion2_track_max_raw = -1;
+static float portion2_track_max_off = 0.0f;
+static uint8 portion2_track_run_active = 0;
+static uint8 portion2_track_summary_emitted = 0;
 static uint32 portion2_final_yaw_align_start_ms = 0;
 static float portion2_run_final_yaw = 0.0f;
 static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
@@ -136,6 +141,8 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_FINAL_YAW_ALIGN_MAX_DIST PORTION2_FINAL_YAW_REACQUIRE_DIST
 #define PORTION2_TERMINAL_POSE_LENGTH_M 1.5f
 #define PORTION2_TERMINAL_APPROACH_SPEED 3.0f
+#define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
+#define PORTION2_TRACK_CENTER_EPSILON_M 0.01f
 
 #define PORTION2_FINAL_YAW_ALIGN_RUNNING   0U
 #define PORTION2_FINAL_YAW_ALIGN_DONE      1U
@@ -149,6 +156,13 @@ static float guandao_segment_yaw(state_t from, state_t to);
 static uint8 portion2_route_required_gps(uint8 route_id);
 static uint16 portion2_route_gps_offset(uint8 route_id);
 static uint8 portion2_route_uses_gps(uint8 route_id);
+
+typedef struct
+{
+    float signed_error;
+    float abs_error;
+    float heading_error;
+} portion2_track_sample_t;
 
 static int16 portion2_plan_index_from_raw_point(int16 raw_index, int16 raw_length, int16 plan_length)
 {
@@ -288,20 +302,101 @@ static uint8 portion2_run_gps_reached_count(void)
     return count;
 }
 
+static portion2_track_sample_t portion2_track_sample(int16 run_index)
+{
+    portion2_track_sample_t sample = {0.0f, 0.0f, 0.0f};
+    int16 route_len = guandao_route_length(&portion_2);
+    int16 segment_start;
+    state_t segment_a;
+    state_t segment_b;
+    float segment_dx;
+    float segment_dy;
+    float segment_length_sq;
+    float offset_x;
+    float offset_y;
+    float dot;
+    float projection;
+    float projected_x;
+    float projected_y;
+    float cross;
+    float track_heading;
+
+    if(route_len < 2) return sample;
+    if(run_index < 0) run_index = 0;
+    if(run_index >= route_len) run_index = route_len - 1;
+    segment_start = (run_index > 0) ? run_index - 1 : 0;
+    if(segment_start >= route_len - 1) segment_start = route_len - 2;
+
+    segment_a = guandao_route_point(&portion_2, segment_start);
+    segment_b = guandao_route_point(&portion_2, segment_start + 1);
+    segment_dx = segment_b.x - segment_a.x;
+    segment_dy = segment_b.y - segment_a.y;
+    segment_length_sq = segment_dx * segment_dx + segment_dy * segment_dy;
+    if(segment_length_sq <= 0.000001f) return sample;
+
+    offset_x = portion_2.current_state.x - segment_a.x;
+    offset_y = portion_2.current_state.y - segment_a.y;
+    dot = offset_x * segment_dx + offset_y * segment_dy;
+    projection = dot / segment_length_sq;
+    if(projection < 0.0f) projection = 0.0f;
+    if(projection > 1.0f) projection = 1.0f;
+    projected_x = segment_a.x + projection * segment_dx;
+    projected_y = segment_a.y + projection * segment_dy;
+    sample.abs_error = hypotf(portion_2.current_state.x - projected_x,
+                              portion_2.current_state.y - projected_y);
+    cross = segment_dx * offset_y - segment_dy * offset_x;
+    sample.signed_error = (cross < 0.0f) ? -sample.abs_error : sample.abs_error;
+    track_heading = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
+    sample.heading_error = guandao_normalize_angle(guandao_segment_yaw(segment_a, segment_b) - track_heading);
+    return sample;
+}
+
+static void portion2_track_reset(void)
+{
+    portion2_run_last_report_point = -1;
+    portion2_track_first_bad_raw = -1;
+    portion2_track_max_raw = -1;
+    portion2_track_max_off = 0.0f;
+    portion2_track_run_active = 1;
+    portion2_track_summary_emitted = 0;
+}
+
+static void portion2_serial_log_track_summary(void)
+{
+    char line[128];
+    int pos;
+
+    if(!portion2_track_run_active || portion2_track_summary_emitted) return;
+    pos = sprintf(line,
+                  "[P2-TRACK-END] route=%u first_bad=%d max_raw=%d max_off=",
+                  (unsigned)(portion2_selected_route + 1),
+                  (portion2_track_first_bad_raw >= 0) ? (int)(portion2_track_first_bad_raw + 1) : 0,
+                  (portion2_track_max_raw >= 0) ? (int)(portion2_track_max_raw + 1) : 0);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_track_max_off);
+    pos += sprintf(&line[pos], "\r\n");
+    uart_write_string(DEBUG_UART_INDEX, line);
+    portion2_track_summary_emitted = 1;
+    portion2_track_run_active = 0;
+}
+
 static void portion2_serial_log_run_point_event(uint8 force)
 {
     int16 route_len = guandao_route_length(&portion_2);
     int16 run_index = guandao_clamp_length(portion_2.current_point_index);
-    char line[256];
+    char line[320];
     int pos = 0;
-    state_t target_point;
+    state_t final_point;
+    portion2_track_sample_t sample;
+    const char *side;
+    const char *status;
     int16 raw_point;
     int16 raw_length;
+    int16 raw_number;
+    int16 plan_number;
+    float final_dist;
 
     if(route_len <= 0) return;
     if(run_index > route_len) run_index = route_len;
-    if(!force && run_index == portion2_run_last_report_point) return;
-    portion2_run_last_report_point = run_index;
     raw_point = portion2_raw_point_from_plan_index(run_index);
     raw_length = guandao_clamp_length(portion_2.length_index);
 
@@ -330,26 +425,48 @@ static void portion2_serial_log_run_point_event(uint8 force)
         portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), yaw_error);
         pos += sprintf(&line[pos], "\r\n");
         uart_write_string(DEBUG_UART_INDEX, line);
+        portion2_serial_log_track_summary();
         return;
     }
 
-    target_point = guandao_route_point(&portion_2, run_index);
+    if(!force && raw_point == portion2_run_last_report_point) return;
+    portion2_run_last_report_point = raw_point;
+    sample = portion2_track_sample(run_index);
+    if(portion2_track_max_raw < 0 || sample.abs_error > portion2_track_max_off)
+    {
+        portion2_track_max_off = sample.abs_error;
+        portion2_track_max_raw = raw_point;
+    }
+    if(portion2_track_first_bad_raw < 0 && sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M)
+    {
+        portion2_track_first_bad_raw = raw_point;
+    }
+    if(sample.signed_error > PORTION2_TRACK_CENTER_EPSILON_M) side = "LEFT";
+    else if(sample.signed_error < -PORTION2_TRACK_CENTER_EPSILON_M) side = "RIGHT";
+    else side = "CENTER";
+    status = (sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M) ? "BAD" : "OK";
+    raw_number = portion2_human_point_number(raw_point, raw_length);
+    plan_number = portion2_human_point_number(run_index, route_len);
+    final_point = guandao_route_point(&portion_2, route_len - 1);
+    final_dist = get_distance(portion_2.current_state, final_point);
     pos += sprintf(line,
-                   "[P2-RUN-PT] route=%u idx=%d/%d raw_pt=%d/%d target_x=",
+                   "[P2-TRACK] route=%u raw=%d/%d plan=%d/%d side=%s off=",
                    (unsigned)(portion2_selected_route + 1),
-                   (int)run_index,
+                   (int)raw_number,
+                   (int)raw_length,
+                   (int)plan_number,
                    (int)route_len,
-                   (int)raw_point,
-                   (int)raw_length);
-    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), target_point.x);
-    pos += sprintf(&line[pos], " target_y=");
-    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), target_point.y);
-    pos += sprintf(&line[pos], " dist=");
-    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_distance);
-    pos += sprintf(&line[pos], " gps=%u/%d reason=%u\r\n",
-                   (unsigned)portion2_run_gps_reached_count(),
-                   (int)portion_2.gps_recode_length,
-                   (unsigned)guandao_debug_stop_reason);
+                   side);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), sample.abs_error);
+    pos += sprintf(&line[pos], " head_err=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), sample.heading_error);
+    pos += sprintf(&line[pos], " steer=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_servo);
+    pos += sprintf(&line[pos], " final=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), final_dist);
+    pos += sprintf(&line[pos], " gps=%s gps_err=", portion2_gps_fusion_is_ready() ? "ON" : "OFF");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_gps_fusion_get_error());
+    pos += sprintf(&line[pos], " status=%s\r\n", status);
     uart_write_string(DEBUG_UART_INDEX, line);
 }
 
@@ -391,7 +508,7 @@ static void portion2_serial_log_run(void)
     int pos = 0;
 
     now_ms = system_getval_ms();
-    if((uint32)(now_ms - last_ms) < 200U) return;
+    if((uint32)(now_ms - last_ms) < 1000U) return;
     last_ms = now_ms;
 
     route_len = (uint16)guandao_route_length(&portion_2);
@@ -2443,6 +2560,7 @@ void portion2_run_select_back_route(uint8 route_id)
 
 void portion2_run_stop(void)
 {
+    portion2_serial_log_track_summary();
     portion2_state_flag = 0;
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
@@ -2476,6 +2594,7 @@ void portion2_run_task(void)
             break;
         case 1:
             portion2_final_yaw_align_start_ms = 0;
+            portion2_track_reset();
             portion2_clear_route();
             Encoder_Get(&guandao_ecd);
             daoche_flag = portion2_run_drive_reverse;
