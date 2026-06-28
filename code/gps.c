@@ -6,7 +6,7 @@
 GPS_work gps_work;
 Lost_Point lost_judge;
 
-#define PORTION2_GPS_FUSION_MIN_SATELLITES    (8U)
+#define PORTION2_GPS_FUSION_MIN_SATELLITES    (6U)
 #define PORTION2_GPS_FUSION_MAX_HDOP          (2.5f)
 #define PORTION2_GPS_FUSION_MIN_ANCHORS       (4U)
 #define PORTION2_GPS_FUSION_REPEAT_DISTANCE   (0.05f)

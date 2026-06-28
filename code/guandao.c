@@ -112,7 +112,7 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 #define PORTION2_GPS_RECORD_MIN_MOVE_M  0.20f
 #define PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M 2.0f
-#define PORTION2_GPS_RECORD_MIN_SATELLITES 8U
+#define PORTION2_GPS_RECORD_MIN_SATELLITES 6U
 #define PORTION2_GPS_MAX_HDOP            (2.5f)
 #define PORTION2_GPS_END_MAX_RAW_GAP    4
 // Alias to align naming with example project
