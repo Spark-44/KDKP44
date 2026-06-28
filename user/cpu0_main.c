@@ -84,6 +84,8 @@ static const dot_matrix_pattern_t portion2_aux_pattern_table[6] =
     DOT_MATRIX_PATTERN_FOG_LIGHT
 };
 
+#define PORTION2_ALL_LIGHT_PIN P33_4
+
 static uint8 portion2_aux_mode = 0;
 static uint32 portion2_aux_start_ms = 0;
 
@@ -92,6 +94,7 @@ static void Portion2_Aux_Stop(void)
     dot_matrix_screen_set_brightness(0);
     dot_matrix_screen_clear_pattern();
     servo_set_angle(90.0f);
+    gpio_low(PORTION2_ALL_LIGHT_PIN);
     portion2_aux_mode = 0;
 }
 
@@ -105,6 +108,10 @@ static void Portion2_Aux_Start(uint8 mode)
     {
         dot_matrix_screen_set_brightness(5000);
         dot_matrix_screen_show_led_pattern(portion2_aux_pattern_table[mode - 1]);
+    }
+    else if(mode == 7)
+    {
+        gpio_high(PORTION2_ALL_LIGHT_PIN);
     }
 }
 
@@ -156,6 +163,7 @@ static void Portion2_Run_Mode_Key_Handle(void)
     }
     if(portion2_mode_k4_short_event())
     {
+        Portion2_Aux_Stop();
         voice_drive_action_stop();
         portion2_run_stop();
         out_v_l = 0.0f;
@@ -409,6 +417,10 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
             Portion2_Aux_Start(6);
             break;
 
+        case OFFLINE_VOICE_CMD_INTERIOR_LIGHT:
+            Portion2_Aux_Start(7);
+            break;
+
         case OFFLINE_VOICE_CMD_WIPER:
             Portion2_Aux_Start(8);
             break;
@@ -550,6 +562,7 @@ int core0_main(void)
     rear_motor_init();                  
     dot_matrix_screen_init();
     servo_init();
+    gpio_init(PORTION2_ALL_LIGHT_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
     
    pit_ms_init(CCU61_CH0, 1);
    pit_ms_init(CCU61_CH1, 1);

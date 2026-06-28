@@ -21,6 +21,13 @@ Assert-Contains $header '#define\s+PORTION2_ROUTE_STRAIGHT\s+10' 'route 11 must 
 Assert-Contains $header '#define\s+PORTION2_ROUTE_SNAKE\s+11' 'route 12 must be the snake route'
 Assert-Contains $source 'const uint8 portion2_route_required_gps_count\[PORTION2_ROUTE_COUNT\]\s*=\s*\{(?:\s*5,){11}\s*5\s*\}' 'all 12 routes must require GPS points'
 Assert-Contains $flash 'PORTION2_ROUTE_CONTINUATION_MAGIC' 'expanded inertial records must use a continuation flash page'
+Assert-Contains $main '#define\s+PORTION2_ALL_LIGHT_PIN\s+P33_4' 'all-light output must use P33_4'
+Assert-Contains $main 'gpio_init\(PORTION2_ALL_LIGHT_PIN,\s*GPO,\s*GPIO_LOW,\s*GPO_PUSH_PULL\)' 'P33_4 must start low as a push-pull output'
+Assert-Contains $main 'OFFLINE_VOICE_CMD_INTERIOR_LIGHT[\s\S]*?Portion2_Aux_Start\(7\)' 'voice command 0x0A must start the all-light action'
+Assert-Contains $main 'if\(mode\s*==\s*7\)[\s\S]*?gpio_high\(PORTION2_ALL_LIGHT_PIN\)' 'all-light action must drive P33_4 high'
+Assert-Contains $main 'Portion2_Aux_Stop\(void\)[\s\S]*?gpio_low\(PORTION2_ALL_LIGHT_PIN\)' 'stopping an auxiliary action must drive P33_4 low'
+Assert-Contains $main 'system_getval_ms\(\)\s*-\s*portion2_aux_start_ms\)\s*>=\s*10000' 'all-light action must share the 10-second timeout'
+Assert-Contains $main 'portion2_mode_k4_short_event\(\)[\s\S]*?Portion2_Aux_Stop\(\)[\s\S]*?main_mode\s*=\s*Guandao_Portion2_Recode' 'leaving run mode must turn P33_4 off'
 
 $voiceMappings = @(
     'OFFLINE_VOICE_CMD_GATE1_RIGHT_BACK[\s\S]*?portion2_run_select_route\(PORTION2_ROUTE_RETURN_1\)',
