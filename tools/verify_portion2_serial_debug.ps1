@@ -44,6 +44,11 @@ if($guandaoC -match "void\s+portion2_record_task\s*\(\s*void\s*\)\s*\{([\s\S]*?)
 {
     $recordTaskBody = $Matches[1]
 }
+$routeUsesGpsBody = ""
+if($guandaoC -match "static\s+uint8\s+portion2_route_uses_gps\s*\(\s*uint8\s+route_id\s*\)\s*\{([\s\S]*?)\r?\n\}")
+{
+    $routeUsesGpsBody = $Matches[1]
+}
 $sleepCaseBody = ""
 if($cpu0 -match "case\s+OFFLINE_VOICE_CMD_SLEEP\s*:\s*([\s\S]*?)\r?\n\s*break\s*;")
 {
@@ -190,10 +195,10 @@ $checks = @(
     @{ Name = "straight yaw integral is bounded and reset"; Pass = $fixedActionC -match "SUBJECT_2_ENCODER_YAW_KI\s+\(0\.20f\)" -and $fixedActionC -match "SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT\s+\(20\.0f\)" -and $fixedActionC -match "yaw_error_integral\s*\+=\s*yaw_error\s*\*\s*dt_s" -and $fixedActionC -match "Value_Limit_float\s*\(\s*&subject_2_fixed_action_state\.yaw_error_integral" -and ([regex]::Matches($fixedActionC, "yaw_error_integral\s*=\s*0\.0f").Count -ge 2) },
     @{ Name = "straight diagnostics expose rack execution"; Pass = $angleControlH -match "angle_control_get_target_angle" -and $angleControlH -match "angle_control_get_current_angle_float" -and $angleControlH -match "angle_control_get_output_pwm" -and $fixedActionC -match 'rack_target=' -and $fixedActionC -match 'rack_actual=' -and $fixedActionC -match 'rack_pwm=' },
     @{ Name = "encoder yaw action emits straight diagnostics"; Pass = $fixedActionC -match "\[STRAIGHT\]" -and $fixedActionC -match '"START"' -and $fixedActionC -match '"RUN"' -and $fixedActionC -match '"STOP"' },
-    @{ Name = "route 8 alone bypasses gps fusion policy"; Pass = $guandaoC -match "static\s+uint8\s+portion2_route_uses_gps\s*\(\s*uint8\s+route_id\s*\)" -and $guandaoC -match "route_id\s*!=\s*PORTION2_ROUTE_STRAIGHT" },
-    @{ Name = "route 8 readiness skips gps requirements"; Pass = $guandaoC -match "if\s*\(\s*!portion2_route_uses_gps\s*\(\s*route_id\s*\)\s*\)\s*return\s+1\s*;" },
-    @{ Name = "route 8 skips gps prepare and runtime update"; Pass = $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_prepare" -and $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_update" },
-    @{ Name = "route 8 runtime copy exposes zero gps points"; Pass = $guandaoC -match "!portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion_2\.gps_recode_length\s*=\s*0" },
+    @{ Name = "all nine routes use gps fusion policy"; Pass = $routeUsesGpsBody -match "return\s*\(\s*route_id\s*<\s*PORTION2_ROUTE_COUNT\s*\)\s*\?\s*1U\s*:\s*0U\s*;" -and $routeUsesGpsBody -notmatch "PORTION2_ROUTE_STRAIGHT" },
+    @{ Name = "route 8 readiness requires gps points"; Pass = $guandaoC -notmatch "if\s*\(\s*!portion2_route_uses_gps\s*\(\s*route_id\s*\)\s*\)\s*return\s+1\s*;" },
+    @{ Name = "route 8 shares gps prepare and runtime update"; Pass = $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_prepare" -and $guandaoC -match "portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion2_gps_fusion_update" },
+    @{ Name = "runtime keeps recorded gps points for every route"; Pass = $guandaoC -notmatch "!portion2_route_uses_gps\s*\(\s*portion2_selected_route\s*\)[\s\S]*?portion_2\.gps_recode_length\s*=\s*0" },
     @{ Name = "smooth plan keeps sharp corners linear"; Pass = $guandaoC -match "keep_corner_linear" -and $guandaoC -match "GUANDAO_SHARP_TURN_ANGLE" },
     @{ Name = "portion2 smooth plan does not force sharp corners"; Pass = $guandaoC -match "state\s*!=\s*&portion_2\s*&&\s*\(turn_in\s*>=\s*GUANDAO_SHARP_TURN_ANGLE" },
     @{ Name = "smooth pursuit uses local arrive threshold"; Pass = $guandaoC -match "float\s+arrive_threshold\s*=\s*persuit_threshold" -and $guandaoC -match "distance_to_target\s*<=\s*arrive_threshold" -and $guandaoC -notmatch "persuit_threshold\s*=\s*persuit_threshold\s*\*" },

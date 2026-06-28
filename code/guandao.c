@@ -1665,7 +1665,7 @@ static uint8 portion2_route_required_gps(uint8 route_id)
 
 static uint8 portion2_route_uses_gps(uint8 route_id)
 {
-    return (route_id < PORTION2_ROUTE_COUNT && route_id != PORTION2_ROUTE_STRAIGHT) ? 1U : 0U;
+    return (route_id < PORTION2_ROUTE_COUNT) ? 1U : 0U;
 }
 
 static uint8 portion2_route_ready_for_run(uint8 route_id)
@@ -1680,7 +1680,6 @@ static uint8 portion2_route_ready_for_run(uint8 route_id)
     required = portion2_route_required_gps(route_id);
     if(required == 0) return 0;
     if(portion2_route_length[route_id] < required) return 0;
-    if(!portion2_route_uses_gps(route_id)) return 1;
     gps_count = portion2_route_gps_count[route_id];
     if(gps_count < required) return 0;
 
@@ -2618,10 +2617,6 @@ void portion2_run_task(void)
             if(portion_2.gps_recode_length > PORTION2_GPS_PER_ROUTE)
             {
                 portion_2.gps_recode_length = PORTION2_GPS_PER_ROUTE;
-            }
-            if(!portion2_route_uses_gps(portion2_selected_route))
-            {
-                portion_2.gps_recode_length = 0;
             }
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
