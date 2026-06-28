@@ -339,6 +339,7 @@ static uint8 gps_gngga_parse (char *line, gnss_info_struct *gnss)
     if(',' != state)
     {
         gnss->satellite_used = (uint8)get_int_number(&buf[get_parameter_index(7, buf)]);
+        gnss->hdop           = get_float_number(&buf[get_parameter_index(8, buf)]);
         gnss->height         = get_float_number(&buf[get_parameter_index(9, buf)]) + get_float_number(&buf[get_parameter_index(11, buf)]);  // 高度 = 海拔高度 + 地球椭球面相对大地水准面的高度
         return_state = 1;
     }

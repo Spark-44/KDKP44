@@ -35,6 +35,8 @@ uint16 portion2_run_rx_count = 0;
 uint8 portion2_run_reject_reason = 0;
 uint16 portion2_route_length[PORTION2_ROUTE_COUNT] = {0};
 uint8 portion2_route_gps_count[PORTION2_ROUTE_COUNT] = {0};
+float portion2_route_start_yaw[PORTION2_ROUTE_COUNT] = {0};
+float portion2_route_final_yaw[PORTION2_ROUTE_COUNT] = {0};
 const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {5, 5, 5, 5, 5, 5, 5, 5, 5};
 static uint8 portion2_gps_auto_has_point[PORTION2_ROUTE_COUNT] = {0};
 static state_t portion2_gps_auto_last_state[PORTION2_ROUTE_COUNT];
@@ -68,6 +70,7 @@ typedef enum
     PORTION2_GPS_REJECT_NONE = 0,
     PORTION2_GPS_REJECT_NO_FIX,
     PORTION2_GPS_REJECT_LOW_SAT,
+    PORTION2_GPS_REJECT_BAD_HDOP,
     PORTION2_GPS_REJECT_ZERO_COORD,
     PORTION2_GPS_REJECT_INTERVAL,
     PORTION2_GPS_REJECT_REPEAT,
@@ -110,6 +113,7 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_GPS_RECORD_MIN_MOVE_M  0.20f
 #define PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M 2.0f
 #define PORTION2_GPS_RECORD_MIN_SATELLITES 8U
+#define PORTION2_GPS_MAX_HDOP            (2.5f)
 #define PORTION2_GPS_END_MAX_RAW_GAP    4
 // Alias to align naming with example project
 #define GUANDAO_AUTO_GPS_RECORD_DIST   PORTION2_AUTO_GPS_RECORD_DIST
@@ -123,14 +127,19 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION1_END_MIN_SPEED         3.0f
 #define PORTION3_PURSUIT_THRESHOLD     0.08f
 #define PORTION3_FINAL_STOP_DIST       0.1f
-#define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.6f
-#define PORTION2_FINAL_MISSED_STOP_DIST 0.8f
-#define PORTION2_FINAL_MISSED_STOP_REASON 12U
-#define PORTION2_FINAL_YAW_TOLERANCE_DEG 8.0f
-#define PORTION2_FINAL_YAW_ALIGN_SPEED 2.0f
-#define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 25.0f
-#define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 5000U
-#define PORTION2_FINAL_YAW_ALIGN_MAX_DIST 0.8f
+#define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.20f
+#define PORTION2_FINAL_YAW_TOLERANCE_DEG 5.0f
+#define PORTION2_FINAL_YAW_ALIGN_SPEED 1.5f
+#define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 15.0f
+#define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 4000U
+#define PORTION2_FINAL_YAW_REACQUIRE_DIST 0.25f
+#define PORTION2_FINAL_YAW_ALIGN_MAX_DIST PORTION2_FINAL_YAW_REACQUIRE_DIST
+#define PORTION2_TERMINAL_POSE_LENGTH_M 1.5f
+#define PORTION2_TERMINAL_APPROACH_SPEED 3.0f
+
+#define PORTION2_FINAL_YAW_ALIGN_RUNNING   0U
+#define PORTION2_FINAL_YAW_ALIGN_DONE      1U
+#define PORTION2_FINAL_YAW_ALIGN_REACQUIRE 2U
 
 static int16 guandao_clamp_length(int length);
 static int16 guandao_route_length(guandao_state *state);
@@ -478,7 +487,7 @@ static uint8 portion2_final_yaw_align(state_t final_point, float dist_to_final, 
     if(fabsf(yaw_error) <= PORTION2_FINAL_YAW_TOLERANCE_DEG)
     {
         portion2_final_yaw_align_start_ms = 0;
-        return 1;
+        return PORTION2_FINAL_YAW_ALIGN_DONE;
     }
 
     now_ms = system_getval_ms();
@@ -486,22 +495,27 @@ static uint8 portion2_final_yaw_align(state_t final_point, float dist_to_final, 
     {
         portion2_final_yaw_align_start_ms = now_ms;
     }
-    if((uint32)(now_ms - portion2_final_yaw_align_start_ms) >= PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS
-            || dist_to_final > PORTION2_FINAL_YAW_ALIGN_MAX_DIST)
+    if(dist_to_final > PORTION2_FINAL_YAW_ALIGN_MAX_DIST)
+    {
+        portion2_final_yaw_align_start_ms = 0;
+        guandao_debug_stop_reason = 11;
+        return PORTION2_FINAL_YAW_ALIGN_REACQUIRE;
+    }
+    if((uint32)(now_ms - portion2_final_yaw_align_start_ms) >= PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS)
     {
         portion2_final_yaw_align_start_ms = 0;
         guandao_debug_stop_reason = 10;
-        return 1;
+        return PORTION2_FINAL_YAW_ALIGN_DONE;
     }
 
     guandao_debug_stop_reason = 9;
     *out_v_l = PORTION2_FINAL_YAW_ALIGN_SPEED;
     *out_v_r = PORTION2_FINAL_YAW_ALIGN_SPEED;
     *out_servo = (yaw_error > 0.0f) ? -PORTION2_FINAL_YAW_ALIGN_STEER_DEG : PORTION2_FINAL_YAW_ALIGN_STEER_DEG;
-    return 0;
+    return PORTION2_FINAL_YAW_ALIGN_RUNNING;
 }
 
-static void portion2_align_route_to_current_yaw(float run_start_theta)
+static float portion2_align_route_to_current_yaw(float run_start_theta)
 {
     int16 length = guandao_clamp_length(portion_2.length_index);
     state_t start_point;
@@ -511,7 +525,7 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
     float cos_yaw;
     float sin_yaw;
 
-    if(length <= 0) return;
+    if(length <= 0) return 0.0f;
 
     angle_plan(&run_start_theta);
     start_point = portion_2.recode_map[0];
@@ -551,6 +565,7 @@ static void portion2_align_route_to_current_yaw(float run_start_theta)
     {
         portion_2.recode_gpsmap[i].theta = guandao_normalize_angle(portion_2.recode_gpsmap[i].theta + yaw_delta);
     }
+    return yaw_delta;
 }
 
 static void portion2_smooth_reference_route(void)
@@ -1234,42 +1249,42 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
        else if (v_center < PORTION1_END_MIN_SPEED) v_center = PORTION1_END_MIN_SPEED;
    }
 
-   if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
-   if(state == &portion_2)
+   if(state == &portion_2 && dist_to_final <= PORTION2_TERMINAL_POSE_LENGTH_M
+           && v_center > PORTION2_TERMINAL_APPROACH_SPEED)
    {
-       int16 raw_length = guandao_clamp_length(state->length_index);
-       int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
-       if(raw_length > 0 && raw_point >= raw_length - 1
-               && state->current_point_index >= route_length - 1
-               && dist_to_final > PORTION2_FINAL_RAW_POINT_STOP_DIST
-               && dist_to_final <= PORTION2_FINAL_MISSED_STOP_DIST)
-       {
-           state->current_point_index = route_length;
-           guandao_debug_stop_reason = PORTION2_FINAL_MISSED_STOP_REASON;
-           * out_v_l = 0;
-           * out_v_r = 0;
-           *out_servo = 0;
-           last_target_steering = 0.0f;
-           last_steer_limit_ms = 0;
-           return;
-       }
-       if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
-       {
-           if(!portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo))
-           {
-               last_target_steering = 0.0f;
-               last_steer_limit_ms = 0;
-               return;
-           }
-           state->current_point_index = route_length;
-           if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
-           * out_v_l = 0;
-           * out_v_r = 0;
-           *out_servo = 0;
-           last_target_steering = 0.0f;
-           last_steer_limit_ms = 0;
-           return;
-       }
+       v_center = PORTION2_TERMINAL_APPROACH_SPEED;
+   }
+
+   if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
+    if(state == &portion_2)
+    {
+        int16 raw_length = guandao_clamp_length(state->length_index);
+        int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
+        if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
+        {
+            uint8 align_status = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
+            if(align_status == PORTION2_FINAL_YAW_ALIGN_RUNNING)
+            {
+                last_target_steering = 0.0f;
+                last_steer_limit_ms = 0;
+                return;
+            }
+            if(align_status == PORTION2_FINAL_YAW_ALIGN_REACQUIRE)
+            {
+                if(state->current_point_index >= route_length - 1) state->current_point_index = route_length - 2;
+            }
+            else
+            {
+                state->current_point_index = route_length;
+                if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
+                * out_v_l = 0;
+                * out_v_r = 0;
+                *out_servo = 0;
+                last_target_steering = 0.0f;
+                last_steer_limit_ms = 0;
+                return;
+            }
+        }
    }
    if(guandao_uses_portion3_trace_standard(state) && state->current_point_index >= route_length - 1
            && dist_to_final <= PORTION3_FINAL_STOP_DIST)
@@ -1637,18 +1652,22 @@ static void portion2_serial_log_record_status(void)
 
 void portion2_serial_dump_routes(void)
 {
-    char line[120];
+    char line[180];
 
     uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] routes summary\r\n");
     for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
     {
-        sprintf(line,
-                "[P2-DUMP] route=%u pts=%u gps=%u/%u saved=%s\r\n",
+        int pos = sprintf(line,
+                "[P2-DUMP] route=%u pts=%u gps=%u/%u saved=%s start_yaw=",
                 (unsigned)(i + 1),
                 (unsigned)portion2_route_length[i],
                 (unsigned)portion2_route_gps_count[i],
                 (unsigned)PORTION2_GPS_PER_ROUTE,
                 portion2_route_saved_flag[i] ? "YES" : "NO");
+        portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_route_start_yaw[i]);
+        pos += sprintf(&line[pos], " final_yaw=");
+        portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_route_final_yaw[i]);
+        pos += sprintf(&line[pos], "\r\n");
         uart_write_string(DEBUG_UART_INDEX, line);
     }
     uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] send D1-D9 to dump points, T toggle run trace, S stop\r\n");
@@ -1727,6 +1746,76 @@ static void portion2_record_point(void)
     }
 }
 
+static void portion2_shape_terminal_pose(float target_yaw)
+{
+    int16 length = guandao_clamp_length(portion_2.length_index);
+    int16 anchor;
+    float covered = 0.0f;
+    float tangent_length;
+    float anchor_yaw;
+    state_t p0;
+    state_t p1;
+    state_t p2;
+    state_t p3;
+
+    if(length < 4) return;
+    anchor = length - 2;
+    for(int16 i = length - 1; i > 0; i--)
+    {
+        covered += get_distance(portion_2.recode_map[i - 1], portion_2.recode_map[i]);
+        anchor = i - 1;
+        if(covered >= PORTION2_TERMINAL_POSE_LENGTH_M) break;
+    }
+    if(length - anchor < 3) return;
+
+    p0 = portion_2.recode_map[anchor];
+    p3 = portion_2.recode_map[length - 1];
+    anchor_yaw = guandao_segment_yaw(p0, portion_2.recode_map[anchor + 1]);
+    tangent_length = get_distance(p0, p3) * 0.45f;
+    if(tangent_length < 0.20f) tangent_length = 0.20f;
+
+    p1 = p0;
+    p1.x += sinf(anchor_yaw / 180.0f * M_PI) * tangent_length;
+    p1.y += cosf(anchor_yaw / 180.0f * M_PI) * tangent_length;
+    p2 = p3;
+    p2.x -= sinf(target_yaw / 180.0f * M_PI) * tangent_length;
+    p2.y -= cosf(target_yaw / 180.0f * M_PI) * tangent_length;
+
+    for(int16 i = anchor + 1; i < length; i++)
+    {
+        float t = (float)(i - anchor) / (float)(length - 1 - anchor);
+        float one_minus_t = 1.0f - t;
+        portion_2.recode_map[i].x = one_minus_t * one_minus_t * one_minus_t * p0.x
+                + 3.0f * one_minus_t * one_minus_t * t * p1.x
+                + 3.0f * one_minus_t * t * t * p2.x
+                + t * t * t * p3.x;
+        portion_2.recode_map[i].y = one_minus_t * one_minus_t * one_minus_t * p0.y
+                + 3.0f * one_minus_t * one_minus_t * t * p1.y
+                + 3.0f * one_minus_t * t * t * p2.y
+                + t * t * t * p3.y;
+    }
+    for(int16 i = anchor; i < length - 1; i++)
+    {
+        portion_2.recode_map[i].theta = guandao_segment_yaw(portion_2.recode_map[i], portion_2.recode_map[i + 1]);
+    }
+    portion_2.recode_map[length - 1].theta = target_yaw;
+}
+
+static void portion2_record_capture_final_pose(void)
+{
+    char line[120];
+    int pos;
+
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
+    portion2_route_final_yaw[portion2_record_route] = Yaw_1;
+    pos = sprintf(line, "[P2-REC-END-POSE] route=%u start_yaw=", (unsigned)(portion2_record_route + 1));
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_route_start_yaw[portion2_record_route]);
+    pos += sprintf(&line[pos], " final_yaw=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_route_final_yaw[portion2_record_route]);
+    pos += sprintf(&line[pos], "\r\n");
+    uart_write_string(DEBUG_UART_INDEX, line);
+}
+
 static uint8 portion2_gps_candidate_valid(uint8 route_id)
 {
     uint8 gps_count;
@@ -1748,6 +1837,11 @@ static uint8 portion2_gps_candidate_valid(uint8 route_id)
     if(gnss.satellite_used < PORTION2_GPS_RECORD_MIN_SATELLITES)
     {
         portion2_gps_reject_reason = PORTION2_GPS_REJECT_LOW_SAT;
+        return 0;
+    }
+    if(gnss.hdop <= 0.0f || gnss.hdop > PORTION2_GPS_MAX_HDOP)
+    {
+        portion2_gps_reject_reason = PORTION2_GPS_REJECT_BAD_HDOP;
         return 0;
     }
     if(gnss.latitude == 0.0 || gnss.longitude == 0.0)
@@ -1795,6 +1889,7 @@ static const char *portion2_gps_reject_reason_text(void)
     {
         case PORTION2_GPS_REJECT_NO_FIX: return "NO_FIX";
         case PORTION2_GPS_REJECT_LOW_SAT: return "LOW_SAT";
+        case PORTION2_GPS_REJECT_BAD_HDOP: return "BAD_HDOP";
         case PORTION2_GPS_REJECT_ZERO_COORD: return "ZERO_COORD";
         case PORTION2_GPS_REJECT_INTERVAL: return "INTERVAL";
         case PORTION2_GPS_REJECT_REPEAT: return "REPEAT";
@@ -1823,11 +1918,12 @@ static void portion2_serial_log_gps_reject(void)
             ? portion2_route_gps_count[portion2_record_route]
             : 0U;
     sprintf(line,
-            "[P2-REC-GPS-SKIP] route=%u reason=%s fix=%u sats=%u coord=%u seq=%lu gps=%u/%u\r\n",
+            "[P2-REC-GPS-SKIP] route=%u reason=%s fix=%u sats=%u hdop100=%u coord=%u seq=%lu gps=%u/%u\r\n",
             (unsigned)(portion2_record_route + 1),
             portion2_gps_reject_reason_text(),
             (unsigned)gnss.state,
             (unsigned)gnss.satellite_used,
+            (unsigned)(gnss.hdop * 100.0f + 0.5f),
             (unsigned)portion2_gps_coordinate_valid(),
             (unsigned long)portion2_gps_get_fix_sequence(),
             (unsigned)gps_count,
@@ -1944,6 +2040,8 @@ void portion2_record_reset(void)
     {
         portion2_route_length[i] = 0;
         portion2_route_gps_count[i] = 0;
+        portion2_route_start_yaw[i] = 0.0f;
+        portion2_route_final_yaw[i] = 0.0f;
         portion2_gps_auto_has_point[i] = 0;
         portion2_route_saved_flag[i] = 0;
     }
@@ -2104,6 +2202,8 @@ void portion2_record_task(void)
     {
         portion2_route_length[portion2_record_route] = 0;
         portion2_route_gps_count[portion2_record_route] = 0;
+        portion2_route_start_yaw[portion2_record_route] = 0.0f;
+        portion2_route_final_yaw[portion2_record_route] = 0.0f;
         portion2_gps_auto_has_point[portion2_record_route] = 0;
         portion2_route_saved_flag[portion2_record_route] = 0;
         portion2_serial_log_record_event("CLEAR");
@@ -2166,6 +2266,8 @@ void portion2_record_task(void)
                 passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
                 portion2_route_length[portion2_record_route] = 0;
                 portion2_route_gps_count[portion2_record_route] = 0;
+                portion2_route_start_yaw[portion2_record_route] = Yaw_1;
+                portion2_route_final_yaw[portion2_record_route] = Yaw_1;
                 portion2_gps_auto_has_point[portion2_record_route] = 0;
                 portion2_route_saved_flag[portion2_record_route] = 0;
                 portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
@@ -2184,6 +2286,7 @@ void portion2_record_task(void)
             if(k3_short)
             {
                 portion2_record_try_gps_point(1);
+                portion2_record_capture_final_pose();
                 portion2_record_state = 2;
                 portion2_serial_log_record_event("STOP");
                 Buzzer_check(50);
@@ -2192,6 +2295,7 @@ void portion2_record_task(void)
             {
                 key2_flag = 0;
                 portion2_record_try_gps_point(1);
+                portion2_record_capture_final_pose();
                 if(portion2_route_gps_count[portion2_record_route] >= portion2_route_required_gps(portion2_record_route))
                 {
                     if(portion2_record_route + 1 < PORTION2_ROUTE_COUNT)
@@ -2359,6 +2463,9 @@ void portion2_run_task(void)
     uint8 gps_prepare_ready;
     uint8 gps_startup_result;
     float run_start_theta;
+    float yaw_delta;
+    float recorded_terminal_yaw;
+    float terminal_path_yaw;
 
     switch(portion2_state_flag)
     {
@@ -2420,8 +2527,16 @@ void portion2_run_task(void)
             }
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
             portion2_translate_route_to_origin();
-            portion2_align_route_to_current_yaw(run_start_theta);
+            yaw_delta = portion2_align_route_to_current_yaw(run_start_theta);
             portion2_smooth_reference_route();
+            recorded_terminal_yaw = portion2_run_reverse
+                    ? portion2_route_start_yaw[portion2_selected_route]
+                    : portion2_route_final_yaw[portion2_selected_route];
+            portion2_run_final_yaw = guandao_normalize_angle(recorded_terminal_yaw + yaw_delta);
+            terminal_path_yaw = portion2_run_reverse
+                    ? guandao_normalize_angle(portion2_run_final_yaw + 180.0f)
+                    : portion2_run_final_yaw;
+            portion2_shape_terminal_pose(terminal_path_yaw);
             gps_prepare_ready = 0;
             if(portion2_route_uses_gps(portion2_selected_route))
             {
@@ -2432,7 +2547,6 @@ void portion2_run_task(void)
                 portion2_gps_fusion_reset();
             }
             guandao_build_smooth_plan(&portion_2);
-            portion2_run_final_yaw = guandao_route_point(&portion_2, guandao_route_length(&portion_2) - 1).theta;
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
                 GPS_state gps_point = portion_2.recode_gpsmap[i];

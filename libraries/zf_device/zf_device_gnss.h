@@ -102,6 +102,7 @@ typedef struct
     
     // 下面两个个信息从GNGGA语句中获取
     uint8       satellite_used;                                                 // 用于定位的卫星数量
+    float       hdop;
     float       height;                                                         // 高度
 }gnss_info_struct;
 

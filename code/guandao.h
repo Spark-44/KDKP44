@@ -112,6 +112,8 @@ extern uint16 portion2_run_rx_count;
 extern uint8 portion2_run_reject_reason;
 extern uint16 portion2_route_length[PORTION2_ROUTE_COUNT];
 extern uint8 portion2_route_gps_count[PORTION2_ROUTE_COUNT];
+extern float portion2_route_start_yaw[PORTION2_ROUTE_COUNT];
+extern float portion2_route_final_yaw[PORTION2_ROUTE_COUNT];
 extern const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT];
 
 void guandao_state_init(guandao_state * e);
