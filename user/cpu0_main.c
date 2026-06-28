@@ -450,16 +450,6 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
             portion2_run_select_route(PORTION2_ROUTE_5);
             break;
 
-        case OFFLINE_VOICE_CMD_ROUTE_ARRIVE_CHANGE:
-            voice_drive_action_stop();
-            portion2_run_select_route(PORTION2_ROUTE_ARRIVE_DIR_CHANGE);
-            break;
-
-        case OFFLINE_VOICE_CMD_ROUTE_START_CHANGE:
-            voice_drive_action_stop();
-            portion2_run_select_route(PORTION2_ROUTE_START_DIR_CHANGE);
-            break;
-
         case OFFLINE_VOICE_CMD_ROUTE_STRAIGHT:
             voice_drive_action_stop();
             portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
@@ -472,27 +462,27 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
 
         case OFFLINE_VOICE_CMD_GATE1_RIGHT_BACK:
             voice_drive_action_stop();
-            portion2_run_select_reverse_route(PORTION2_ROUTE_1);
+            portion2_run_select_route(PORTION2_ROUTE_RETURN_1);
             break;
 
         case OFFLINE_VOICE_CMD_GATE1_BACK:
             voice_drive_action_stop();
-            portion2_run_select_reverse_route(PORTION2_ROUTE_2);
+            portion2_run_select_route(PORTION2_ROUTE_RETURN_2);
             break;
 
         case OFFLINE_VOICE_CMD_GATE2_BACK:
             voice_drive_action_stop();
-            portion2_run_select_reverse_route(PORTION2_ROUTE_3);
+            portion2_run_select_route(PORTION2_ROUTE_RETURN_3);
             break;
 
         case OFFLINE_VOICE_CMD_GATE3_BACK:
             voice_drive_action_stop();
-            portion2_run_select_reverse_route(PORTION2_ROUTE_4);
+            portion2_run_select_route(PORTION2_ROUTE_RETURN_4);
             break;
 
         case OFFLINE_VOICE_CMD_GATE3_LEFT_BACK:
             voice_drive_action_stop();
-            portion2_run_select_reverse_route(PORTION2_ROUTE_5);
+            portion2_run_select_route(PORTION2_ROUTE_RETURN_5);
             break;
 
         case OFFLINE_VOICE_CMD_BACK_STRAIGHT:
@@ -506,9 +496,25 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
             break;
 
         case OFFLINE_VOICE_CMD_FORWARD_10M:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
+            break;
+
         case OFFLINE_VOICE_CMD_BACKWARD_10M:
+            voice_drive_action_stop();
+            portion2_run_select_back_route(PORTION2_ROUTE_STRAIGHT);
+            break;
+
         case OFFLINE_VOICE_CMD_SNAKE_FORWARD:
+            voice_drive_action_stop();
+            portion2_run_select_route(PORTION2_ROUTE_SNAKE);
+            break;
+
         case OFFLINE_VOICE_CMD_SNAKE_BACKWARD:
+            voice_drive_action_stop();
+            portion2_run_select_back_route(PORTION2_ROUTE_SNAKE);
+            break;
+
         case OFFLINE_VOICE_CMD_CCW_CIRCLE:
         case OFFLINE_VOICE_CMD_CW_CIRCLE:
         case OFFLINE_VOICE_CMD_TURN_LEFT_DRIVE:

@@ -23,9 +23,21 @@ float kd;
 #define PORTION2_GPS_PAGE_TOTAL_INDEX     (1)
 #define PORTION2_GPS_PAGE_DATA_INDEX      (2)
 #define PORTION2_ROUTE_METADATA_WORDS      (PORTION2_ROUTE_COUNT * 4)
-#define PORTION2_INERTIAL_PAGE_WORDS       (2 * PORTION2_TOTAL_ROUTE_POINTS + 2 + PORTION2_ROUTE_METADATA_WORDS)
-#if PORTION2_INERTIAL_PAGE_WORDS > 1020
-#error "Portion-2 inertial records exceed one flash page"
+#define PORTION2_ROUTE_PAGE_WORDS          (1020)
+#define PORTION2_ROUTE_PAGE_HEADER_WORDS   (2)
+#define PORTION2_ROUTE_PRIMARY_POINTS      ((PORTION2_ROUTE_PAGE_WORDS - PORTION2_ROUTE_PAGE_HEADER_WORDS) / 2)
+#define PORTION2_ROUTE_CONTINUATION_POINTS (PORTION2_TOTAL_ROUTE_POINTS - PORTION2_ROUTE_PRIMARY_POINTS)
+#define PORTION2_ROUTE_CONTINUATION_MAGIC  (0x50325243U)
+#define PORTION2_ROUTE_CONT_MAGIC_INDEX    (0)
+#define PORTION2_ROUTE_CONT_COUNT_INDEX    (1)
+#define PORTION2_ROUTE_CONT_DATA_INDEX     (2)
+#define PORTION2_ROUTE_CONT_METADATA_INDEX (PORTION2_ROUTE_CONT_DATA_INDEX + PORTION2_ROUTE_CONTINUATION_POINTS * 2)
+#define PORTION2_ROUTE_CONT_PAGE_WORDS     (PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_METADATA_WORDS)
+#if PORTION2_ROUTE_CONTINUATION_POINTS <= 0
+#error "Portion-2 route continuation page is not required"
+#endif
+#if PORTION2_ROUTE_CONT_PAGE_WORDS > PORTION2_ROUTE_PAGE_WORDS
+#error "Portion-2 inertial records exceed two flash pages"
 #endif
 #if PORTION2_GPS_PAGE_DATA_INDEX + PORTION2_TOTAL_GPS_COUNT * 4 > 1020
 #error "Portion-2 GPS records exceed one flash page"
@@ -151,33 +163,19 @@ void Flash_Main_Read(void)
 
 void Flash_Write_passage_points(void)
 {
-    int max_storage = 2 * passage.length_index +2 ;
-    int route_info_index;
+    int primary_points = PORTION2_ROUTE_PRIMARY_POINTS;
+    int continuation_points = PORTION2_ROUTE_CONTINUATION_POINTS;
     int16 gps_high_water = 0;
-    if (max_storage >=1020) max_storage = 1020;
+    passage.length_index = PORTION2_TOTAL_ROUTE_POINTS;
     flash_buffer_clear();
 
     flash_union_buffer[0].int16_type = passage.length_index;
     flash_union_buffer[1].uint32_type = PORTION2_ROUTE_LAYOUT_MAGIC;
-    for(int i = 2 , j = 0;i < max_storage ; i += 2 , j++)
+    for(int i = 0; i < primary_points; i++)
     {
-        flash_union_buffer[i].float_type = passage.recode_map[j].x;
-    }
-    for(int i = 3 , j = 0;i < max_storage ; i += 2 , j++)
-    {
-        flash_union_buffer[i].float_type = passage.recode_map[j].y;
-    }
-
-    route_info_index = max_storage;
-    if(route_info_index + PORTION2_ROUTE_METADATA_WORDS < 1020)
-    {
-        for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
-        {
-            flash_union_buffer[route_info_index + i].int16_type = portion2_route_length[i];
-            flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT + i].int16_type = portion2_route_gps_count[i];
-            flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 2 + i].float_type = portion2_route_start_yaw[i];
-            flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 3 + i].float_type = portion2_route_final_yaw[i];
-        }
+        int index = PORTION2_ROUTE_PAGE_HEADER_WORDS + i * 2;
+        flash_union_buffer[index].float_type = passage.recode_map[i].x;
+        flash_union_buffer[index + 1].float_type = passage.recode_map[i].y;
     }
 
     if(flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE))
@@ -185,6 +183,29 @@ void Flash_Write_passage_points(void)
         flash_erase_page(FLASH_SECTION_INDEX,RECODE_PASSAGE) ;
     }
     flash_write_page_from_buffer(FLASH_SECTION_INDEX,RECODE_PASSAGE);
+
+    flash_buffer_clear();
+    flash_union_buffer[PORTION2_ROUTE_CONT_MAGIC_INDEX].uint32_type = PORTION2_ROUTE_CONTINUATION_MAGIC;
+    flash_union_buffer[PORTION2_ROUTE_CONT_COUNT_INDEX].int16_type = continuation_points;
+    for(int i = 0; i < continuation_points; i++)
+    {
+        int source_index = primary_points + i;
+        int page_index = PORTION2_ROUTE_CONT_DATA_INDEX + i * 2;
+        flash_union_buffer[page_index].float_type = passage.recode_map[source_index].x;
+        flash_union_buffer[page_index + 1].float_type = passage.recode_map[source_index].y;
+    }
+    for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+    {
+        flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + i].int16_type = portion2_route_length[i];
+        flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT + i].int16_type = portion2_route_gps_count[i];
+        flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT * 2 + i].float_type = portion2_route_start_yaw[i];
+        flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT * 3 + i].float_type = portion2_route_final_yaw[i];
+    }
+    if(flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE_THREE))
+    {
+        flash_erase_page(FLASH_SECTION_INDEX,RECODE_PASSAGE_THREE);
+    }
+    flash_write_page_from_buffer(FLASH_SECTION_INDEX,RECODE_PASSAGE_THREE);
 
     flash_buffer_clear();
     flash_union_buffer[PORTION2_GPS_PAGE_MAGIC_INDEX].uint32_type = PORTION2_GPS_LAYOUT_MAGIC;
@@ -211,8 +232,7 @@ void Flash_Write_passage_points(void)
 
 void Flash_Read_passage_points(void)
 {
-    int get_max_storage = 0;
-    int route_info_index;
+    uint8 route_primary_valid = 0;
     uint8 gps_layout_valid = 0;
     uint8 route_layout_valid = 0;
     if(flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE))
@@ -220,27 +240,40 @@ void Flash_Read_passage_points(void)
         flash_buffer_clear();
         flash_read_page_to_buffer(FLASH_SECTION_INDEX, RECODE_PASSAGE);
         passage.length_index = flash_union_buffer[0].int16_type;
-        get_max_storage =2 * passage.length_index +2;
-        for(int i = 2 , j = 0;i < get_max_storage ; i += 2 , j++)
-        {
-            passage.recode_map[j].x = flash_union_buffer[i].float_type;
-        }
-        for(int i = 3 , j = 0;i < get_max_storage ; i += 2 , j++)
-        {
-            passage.recode_map[j].y = flash_union_buffer[i].float_type;
-        }
-        route_info_index = get_max_storage;
         if(passage.length_index == PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS &&
-           flash_union_buffer[1].uint32_type == PORTION2_ROUTE_LAYOUT_MAGIC &&
-           route_info_index + PORTION2_ROUTE_METADATA_WORDS < 1020)
+           flash_union_buffer[1].uint32_type == PORTION2_ROUTE_LAYOUT_MAGIC)
+        {
+            route_primary_valid = 1;
+            for(int i = 0; i < PORTION2_ROUTE_PRIMARY_POINTS; i++)
+            {
+                int index = PORTION2_ROUTE_PAGE_HEADER_WORDS + i * 2;
+                passage.recode_map[i].x = flash_union_buffer[index].float_type;
+                passage.recode_map[i].y = flash_union_buffer[index + 1].float_type;
+            }
+        }
+    }
+
+    if(route_primary_valid && flash_check(FLASH_SECTION_INDEX,RECODE_PASSAGE_THREE))
+    {
+        flash_buffer_clear();
+        flash_read_page_to_buffer(FLASH_SECTION_INDEX, RECODE_PASSAGE_THREE);
+        if(flash_union_buffer[PORTION2_ROUTE_CONT_MAGIC_INDEX].uint32_type == PORTION2_ROUTE_CONTINUATION_MAGIC &&
+           flash_union_buffer[PORTION2_ROUTE_CONT_COUNT_INDEX].int16_type == PORTION2_ROUTE_CONTINUATION_POINTS)
         {
             route_layout_valid = 1;
+            for(int i = 0; i < PORTION2_ROUTE_CONTINUATION_POINTS; i++)
+            {
+                int target_index = PORTION2_ROUTE_PRIMARY_POINTS + i;
+                int page_index = PORTION2_ROUTE_CONT_DATA_INDEX + i * 2;
+                passage.recode_map[target_index].x = flash_union_buffer[page_index].float_type;
+                passage.recode_map[target_index].y = flash_union_buffer[page_index + 1].float_type;
+            }
             for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
             {
-                portion2_route_length[i] = flash_union_buffer[route_info_index + i].int16_type;
-                portion2_route_gps_count[i] = flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT + i].int16_type;
-                portion2_route_start_yaw[i] = flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 2 + i].float_type;
-                portion2_route_final_yaw[i] = flash_union_buffer[route_info_index + PORTION2_ROUTE_COUNT * 3 + i].float_type;
+                portion2_route_length[i] = flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + i].int16_type;
+                portion2_route_gps_count[i] = flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT + i].int16_type;
+                portion2_route_start_yaw[i] = flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT * 2 + i].float_type;
+                portion2_route_final_yaw[i] = flash_union_buffer[PORTION2_ROUTE_CONT_METADATA_INDEX + PORTION2_ROUTE_COUNT * 3 + i].float_type;
                 if(portion2_route_length[i] > PORTION2_ROUTE_MAX_POINTS) portion2_route_length[i] = 0;
             }
         }

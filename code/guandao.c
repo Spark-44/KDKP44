@@ -37,7 +37,7 @@ uint16 portion2_route_length[PORTION2_ROUTE_COUNT] = {0};
 uint8 portion2_route_gps_count[PORTION2_ROUTE_COUNT] = {0};
 float portion2_route_start_yaw[PORTION2_ROUTE_COUNT] = {0};
 float portion2_route_final_yaw[PORTION2_ROUTE_COUNT] = {0};
-const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {5, 5, 5, 5, 5, 5, 5, 5, 5};
+const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
 static uint8 portion2_gps_auto_has_point[PORTION2_ROUTE_COUNT] = {0};
 static state_t portion2_gps_auto_last_state[PORTION2_ROUTE_COUNT];
 

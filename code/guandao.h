@@ -4,13 +4,13 @@
 #define CODE_GUANDAO_H_
 
 #define ONE_TICK_DISTANCE                      0.000378f
-#define PORTION2_ROUTE_COUNT                   9
+#define PORTION2_ROUTE_COUNT                   12
 #define PORTION2_ROUTE_MAX_POINTS              49
-#define PORTION2_TOTAL_ROUTE_POINTS            441
-#define MAX_LENGTH_INDEX                       441
+#define PORTION2_TOTAL_ROUTE_POINTS            588
+#define MAX_LENGTH_INDEX                       588
 #define PORTION2_GPS_PER_ROUTE                 20
-#define PORTION2_TOTAL_GPS_COUNT               180
-#define MAX_GPS_RECODE                         180
+#define PORTION2_TOTAL_GPS_COUNT               240
+#define MAX_GPS_RECODE                         240
 #if PORTION2_TOTAL_ROUTE_POINTS != PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS
 #error "PORTION2_TOTAL_ROUTE_POINTS must match route count and per-route capacity"
 #endif
@@ -28,10 +28,13 @@
 #define PORTION2_ROUTE_3                       2
 #define PORTION2_ROUTE_4                       3
 #define PORTION2_ROUTE_5                       4
-#define PORTION2_ROUTE_ARRIVE_DIR_CHANGE      5
-#define PORTION2_ROUTE_START_DIR_CHANGE       6
-#define PORTION2_ROUTE_STRAIGHT               7
-#define PORTION2_ROUTE_SNAKE                  8
+#define PORTION2_ROUTE_RETURN_1                5
+#define PORTION2_ROUTE_RETURN_2                6
+#define PORTION2_ROUTE_RETURN_3                7
+#define PORTION2_ROUTE_RETURN_4                8
+#define PORTION2_ROUTE_RETURN_5                9
+#define PORTION2_ROUTE_STRAIGHT                10
+#define PORTION2_ROUTE_SNAKE                   11
 #define PORTION_TWO_INDEX                      3
 #define M_PI                                   3.14159265358979323846f
 #define WHEEL_BASE                             0.724f     
