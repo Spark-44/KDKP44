@@ -5,6 +5,7 @@ $header = Get-Content -Raw (Join-Path $repo 'code/guandao.h')
 $source = Get-Content -Raw (Join-Path $repo 'code/guandao.c')
 $main = Get-Content -Raw (Join-Path $repo 'user/cpu0_main.c')
 $flash = Get-Content -Raw (Join-Path $repo 'code/flash.c')
+$fixed = Get-Content -Raw (Join-Path $repo 'code/subject_2_fixed_action.c')
 
 function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
     if ($Text -notmatch $Pattern) {
@@ -43,5 +44,15 @@ $voiceMappings = @(
 foreach ($mapping in $voiceMappings) {
     Assert-Contains $main $mapping "missing voice mapping: $mapping"
 }
+
+Assert-Contains $source 'float\s+base_speed\s*=\s*15\.0f' 'route base speed must default to 1.5m/s'
+Assert-Contains $flash 'int16\s+control\[5\]\s*=\s*\{15,\s*-10,' 'flash defaults must use 1.5m/s forward route speed'
+if ([regex]::Matches($flash, 'control\[0\]\s*=\s*15;').Count -ne 2) {
+    throw 'flash read and write paths must both force route speed to 1.5m/s'
+}
+Assert-Contains $fixed '#define\s+SUBJECT_2_FIXED_TURN_SPEED_MPS\s+\(1\.0f\)' 'fixed turn and circle speed must be 1.0m/s'
+Assert-Contains $fixed '#define\s+SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS\s+\(0\.35f\)' 'unrequested fixed straight and snake actions must remain at 0.35m/s'
+Assert-Contains $fixed '\{VOICE_DRIVE_ACTION_FORWARD_10M,\s*SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS' 'fixed straight action must use its separate speed'
+Assert-Contains $fixed '#define\s+SUBJECT_2_ENCODER_YAW_SPEED_MPS\s+\(1\.0f\)' 'encoder/yaw straight speed must be 1.0m/s'
 
 Write-Host 'portion-2 12-route layout checks passed'

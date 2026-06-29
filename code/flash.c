@@ -3,7 +3,7 @@
 #include "zf_common_headfile.h"
 
 float speed_pid[6]={0.5f, 1.0f, 0.0f, 0.4f, 0.4f, 3.0f};
-int16 control[5] = {10, -10, 2, 0, 0};
+int16 control[5] = {15, -10, 2, 0, 0};
 float kp;
 float ki;
 float kd;
@@ -93,7 +93,7 @@ void Flash_Read_pid(void)
         {
             control[j] = flash_union_buffer[i].int16_type;
         }
-        control[0] = 10;
+        control[0] = 15;
         base_speed = (float)control[0];
         daoche_speed = (float)control[1];
         preview_spets = control[2];
@@ -116,7 +116,7 @@ void Flash_Write_pid(void)
     recode_threshold = speed_pid[3];
     persuit_threshold = speed_pid[4];
     final_dsts = speed_pid[5];
-    control[0] = 10;
+    control[0] = 15;
     base_speed = (float)control[0];
     daoche_speed = (float)control[1];
     preview_spets = control[2];

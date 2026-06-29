@@ -13,7 +13,7 @@ SLIP_Cheak slip_state = NONE;
 
 uint8 route_setting_choice = 0;        
 
-float base_speed = 10.0f;
+float base_speed = 15.0f;
 float persuit_threshold = 0.4f;         
 float recode_threshold = 0.2f;         
 int16 preview_spets = 2;                  
