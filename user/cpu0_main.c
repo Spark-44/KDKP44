@@ -303,6 +303,26 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         }
         reverse_route_pending = 0;
     }
+    else if(data >= 'U' && data <= 'W')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        voice_drive_action_stop();
+        portion2_run_select_route(data - 'U' + PORTION2_ROUTE_RETURN_5);
+    }
+    else if(data >= 'u' && data <= 'w')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        voice_drive_action_stop();
+        portion2_run_select_route(data - 'u' + PORTION2_ROUTE_RETURN_5);
+    }
     else if(data >= 'A' && data <= 'H')
     {
         reverse_route_pending = 0;
