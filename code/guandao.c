@@ -93,7 +93,8 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define GUANDAO_STEERING_GAIN          2.2f
 #define GUANDAO_STEERING_CMD_LIMIT     25.0f
 #define GUANDAO_CURVE_TRIGGER_ANGLE    35.0f
-#define GUANDAO_CURVE_SPEED_RATIO      0.70f
+#define GUANDAO_LARGE_CURVE_SPEED      11.0f
+#define GUANDAO_SHARP_TURN_SPEED       8.0f
 #define GUANDAO_HIGH_SPEED_THRESHOLD   5.0f
 #define GUANDAO_HIGH_SPEED_GAIN        1.55f
 #define GUANDAO_HIGH_SPEED_CMD_LIMIT   25.0f
@@ -101,7 +102,6 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define GUANDAO_VERY_HIGH_SPEED_GAIN   1.20f
 #define GUANDAO_VERY_HIGH_CMD_LIMIT    25.0f
 #define GUANDAO_SHARP_TURN_ANGLE       45.0f
-#define GUANDAO_SHARP_TURN_SPEED_RATIO 0.55f
 #define GUANDAO_STEER_RATE_LOW         3.0f
 #define GUANDAO_STEER_RATE_HIGH        1.5f
 #define PORTION2_STEERING_GAIN         0.90f
@@ -134,13 +134,13 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION3_FINAL_STOP_DIST       0.1f
 #define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.20f
 #define PORTION2_FINAL_YAW_TOLERANCE_DEG 5.0f
-#define PORTION2_FINAL_YAW_ALIGN_SPEED 1.5f
+#define PORTION2_FINAL_YAW_ALIGN_SPEED 4.0f
 #define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 15.0f
 #define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 4000U
 #define PORTION2_FINAL_YAW_REACQUIRE_DIST 0.25f
 #define PORTION2_FINAL_YAW_ALIGN_MAX_DIST PORTION2_FINAL_YAW_REACQUIRE_DIST
 #define PORTION2_TERMINAL_POSE_LENGTH_M 1.5f
-#define PORTION2_TERMINAL_APPROACH_SPEED 3.0f
+#define PORTION2_TERMINAL_APPROACH_SPEED 6.0f
 #define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
 #define PORTION2_TRACK_CENTER_EPSILON_M 0.01f
 
@@ -1331,39 +1331,28 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
        if(v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
    }
 
-   if(fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE)
+   if(upcoming_turn >= GUANDAO_SHARP_TURN_ANGLE)
    {
-       float curve_scale = 1.0f - (fabsf(preview_alpha2) - GUANDAO_CURVE_TRIGGER_ANGLE) / 90.0f;
-       Value_Limit_float(&curve_scale, 0.55f, 1.0f);
-       v_center = base_speed * curve_scale;
-       if(v_center < MIN_SPEED) v_center = MIN_SPEED;
+       if(v_center > GUANDAO_SHARP_TURN_SPEED) v_center = GUANDAO_SHARP_TURN_SPEED;
    }
-   if(base_speed >= GUANDAO_VERY_HIGH_SPEED_THRESHOLD && (fabsf(angle_diff) > 25.0f || fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE))
+   else if(fabsf(angle_diff) > 25.0f || fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE)
    {
-       if(v_center > base_speed * GUANDAO_CURVE_SPEED_RATIO)
-       {
-           v_center = base_speed * GUANDAO_CURVE_SPEED_RATIO;
-       }
+       if(v_center > GUANDAO_LARGE_CURVE_SPEED) v_center = GUANDAO_LARGE_CURVE_SPEED;
    }
-   else if(base_speed > GUANDAO_HIGH_SPEED_THRESHOLD && (fabsf(angle_diff) > 30.0f || fabsf(preview_alpha2) > GUANDAO_CURVE_TRIGGER_ANGLE))
-   {
-       if(v_center > base_speed * 0.75f)
-       {
-           v_center = base_speed * 0.75f;
-       }
-   }
+   if(v_center < MIN_SPEED) v_center = MIN_SPEED;
 
    if (!portion1_parking_zone && dist_to_final < final_dsts && state->current_point_index >= route_length - 30)
    {
+       float terminal_speed = base_speed * (dist_to_final / final_dsts);
 
        arrive_threshold = persuit_threshold*(dist_to_final / final_dsts);
        if(arrive_threshold < 0.3f){arrive_threshold = 0.3f;}
-       v_center = base_speed * (dist_to_final / final_dsts);
        if(guandao_uses_portion3_trace_standard(state))
        {
-           if (v_center < MIN_SPEED) v_center = MIN_SPEED;
+           if(terminal_speed < MIN_SPEED) terminal_speed = MIN_SPEED;
        }
-       else if (v_center < PORTION1_END_MIN_SPEED) v_center = PORTION1_END_MIN_SPEED;
+       else if(terminal_speed < PORTION1_END_MIN_SPEED) terminal_speed = PORTION1_END_MIN_SPEED;
+       if(v_center > terminal_speed) v_center = terminal_speed;
    }
 
    if(state == &portion_2 && dist_to_final <= PORTION2_TERMINAL_POSE_LENGTH_M

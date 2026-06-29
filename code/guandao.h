@@ -40,7 +40,7 @@
 #define WHEEL_BASE                             0.724f     
 #define TRACK_WIDTH                            0.594f     
 #define GUANDAO_SPEED_TO_MPS                   (0.1f)
-#define MIN_SPEED                              4.0f      
+#define MIN_SPEED                              6.0f
 #define MAX_STEERING_RAD                       90.0f      
 #define SLIP_CHEAK_INDEX                       4.0f       
 #define START_GPS_FLAG                         1          
