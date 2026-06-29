@@ -10,8 +10,7 @@
 
 typedef enum{
     Guandao_Voice,
-    Guandao_Portion2_Recode,
-    Guandao_Drive
+    Guandao_Portion2_Recode
 }Mode_Choice;
 
 extern Mode_Choice main_mode;

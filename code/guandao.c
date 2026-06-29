@@ -2187,11 +2187,12 @@ void portion2_mode_key_transition_lock(void)
     key4_flag = 0;
 }
 
-portion2_mode_key_event_t portion2_mode_k4_event(void)
+uint8 portion2_mode_k4_short_event(void)
 {
     uint32 now_ms = system_getval_ms();
     uint8 key_down = (gpio_get_level(KEY4) == 0);
     uint8 release_event = 0;
+    uint8 short_event = 0;
 
     if(key4_flag)
     {
@@ -2206,29 +2207,27 @@ portion2_mode_key_event_t portion2_mode_k4_event(void)
             portion2_mode_k4_wait_release = 0;
             portion2_mode_k4_start_ms = 0;
         }
-        return PORTION2_MODE_KEY_NONE;
+        return 0;
     }
 
     if(key_down)
     {
         if(portion2_mode_k4_start_ms == 0) portion2_mode_k4_start_ms = now_ms;
-        if((uint32)(now_ms - portion2_mode_k4_start_ms) >= 1500U)
+        if((uint32)(now_ms - portion2_mode_k4_start_ms) > 1500U)
         {
             portion2_mode_k4_wait_release = 1;
-            return PORTION2_MODE_KEY_LONG;
         }
     }
     else
     {
         if(portion2_mode_k4_start_ms != 0 || release_event)
         {
-            portion2_mode_k4_start_ms = 0;
-            return PORTION2_MODE_KEY_SHORT;
+            short_event = 1;
         }
         portion2_mode_k4_start_ms = 0;
     }
 
-    return PORTION2_MODE_KEY_NONE;
+    return short_event;
 }
 
 void portion2_record_enter_mode(void)
@@ -2244,21 +2243,10 @@ void portion2_record_enter_mode(void)
     }
 }
 
-static void portion2_record_finish_if_active(void)
-{
-    if(portion2_record_state != 1) return;
-
-    portion2_record_try_gps_point(1);
-    portion2_record_capture_final_pose();
-    portion2_record_state = 2;
-    portion2_serial_log_record_event("STOP");
-}
-
 void portion2_record_task(void)
 {
-    uint8 k1_short = 0, k2_short = 0, k3_short = 0;
-    uint8 k1_long = 0, k2_long = 0, k3_long = 0;
-    portion2_mode_key_event_t k4_event;
+    uint8 k1_short = 0, k2_short = 0, k3_short = 0, k4_short = 0;
+    uint8 k1_long = 0, k2_long = 0, k3_long = 0, k4_long = 0;
     uint32 now_ms;
 
     if(portion2_record_route >= PORTION2_ROUTE_COUNT)
@@ -2313,7 +2301,7 @@ void portion2_record_task(void)
         portion2_record_k3_start_ms = 0; portion2_record_k3_wait_release = 0;
     }
 
-    k4_event = portion2_mode_k4_event();
+    k4_short = portion2_mode_k4_short_event();
 
     if(k1_long)
     {
@@ -2339,6 +2327,11 @@ void portion2_record_task(void)
         portion2_auto_record_gps_point();
         Buzzer_check(30);
     }
+    if(k4_long)
+    {
+        // 保留按键长按检测，但不执行“保存全部路线”动作（按用户需求移除）
+    }
+
     if(k1_short && portion2_record_state != 1)
     {
         if(portion2_record_route > 0) portion2_record_route--;
@@ -2351,29 +2344,14 @@ void portion2_record_task(void)
         portion2_serial_log_record_event("SELECT");
         Buzzer_check(20);
     }
-    if(k4_event == PORTION2_MODE_KEY_SHORT)
+    if(k4_short)
     {
-        portion2_record_finish_if_active();
         portion2_mode_key_transition_lock();
         portion2_record_key_state_reset();
         main_mode = Guandao_Voice;
         route_setting_choice = 3;
         conrtol_mode = GUANDAO;
         Buzzer_check(50);
-        ips200_clear();
-        return;
-    }
-    if(k4_event == PORTION2_MODE_KEY_LONG)
-    {
-        portion2_record_finish_if_active();
-        portion2_mode_key_transition_lock();
-        portion2_record_key_state_reset();
-        out_v_l = 0.0f;
-        out_v_r = 0.0f;
-        out_servo = 0.0f;
-        main_mode = Guandao_Drive;
-        conrtol_mode = GUANDAO;
-        Buzzer_check(100);
         ips200_clear();
         return;
     }

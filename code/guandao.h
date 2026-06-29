@@ -82,12 +82,6 @@ typedef enum {
     Right_Slip,
 }SLIP_Cheak;
 
-typedef enum {
-    PORTION2_MODE_KEY_NONE = 0,
-    PORTION2_MODE_KEY_SHORT,
-    PORTION2_MODE_KEY_LONG,
-} portion2_mode_key_event_t;
-
 extern SLIP_Cheak slip_state;
 extern guandao_state INS;                         
 extern guandao_state passage;                    //1 = route_setting_choice
@@ -172,7 +166,7 @@ void portion2_record_reset(void);
 void portion2_record_enter_mode(void);
 void portion2_record_mark_loaded_routes_saved(void);
 void portion2_record_task(void);
-portion2_mode_key_event_t portion2_mode_k4_event(void);
+uint8 portion2_mode_k4_short_event(void);
 void portion2_mode_key_transition_lock(void);
 void portion2_run_select_route(uint8 route_id);
 void portion2_run_select_reverse_route(uint8 route_id);
