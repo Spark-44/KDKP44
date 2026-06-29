@@ -12,6 +12,12 @@
 extern int num;
 static uint8 voice_inited = 0;
 
+#define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
+#define PORTION2_DRIVE_MAX_SPEED_MPS  (5.0f)
+
+static float portion2_drive_target_mps = 0.0f;
+static uint8 portion2_drive_initialized = 0;
+
 static void Guandao_Rear_Motor_Update(void)
 {
     float target_mps = 0.0f;
@@ -148,6 +154,8 @@ static void Portion2_Dot_Matrix_Scan_Update(void)
 
 static void Portion2_Run_Mode_Key_Handle(void)
 {
+    portion2_mode_key_event_t k4_event;
+
     if(key1_flag) { key1_flag = 0; }
     if(key2_flag) { key2_flag = 0; }
     if(key3_flag)
@@ -161,7 +169,8 @@ static void Portion2_Run_Mode_Key_Handle(void)
         rear_motor_stop();
         Buzzer_check(50);
     }
-    if(portion2_mode_k4_short_event())
+    k4_event = portion2_mode_k4_event();
+    if(k4_event == PORTION2_MODE_KEY_SHORT)
     {
         Portion2_Aux_Stop();
         voice_drive_action_stop();
@@ -217,6 +226,99 @@ static void Portion2_Run_Mode_UI_Update(void)
             ips200_show_string(X(1),  Y(5), "ROUTE EMPTY");
         }
     }
+}
+
+static void Portion2_Drive_Mode_Stop(void)
+{
+    portion2_drive_target_mps = 0.0f;
+    out_v_l = 0.0f;
+    out_v_r = 0.0f;
+    out_servo = 0.0f;
+    rear_motor_stop();
+}
+
+static void Portion2_Drive_Mode_Enter(void)
+{
+    Portion2_Aux_Stop();
+    voice_drive_action_stop();
+    portion2_run_stop();
+    Portion2_Drive_Mode_Stop();
+    Key_Init();
+    key1_flag = 0;
+    key2_flag = 0;
+    key3_flag = 0;
+    key4_flag = 0;
+    conrtol_mode = GUANDAO;
+    portion2_drive_initialized = 1;
+}
+
+static void Portion2_Drive_Mode_Task(void)
+{
+    portion2_mode_key_event_t k4_event;
+
+    if(!portion2_drive_initialized)
+    {
+        Portion2_Drive_Mode_Enter();
+    }
+
+    k4_event = portion2_mode_k4_event();
+    if(k4_event == PORTION2_MODE_KEY_LONG)
+    {
+        Portion2_Drive_Mode_Stop();
+        portion2_mode_key_transition_lock();
+        portion2_record_enter_mode();
+        Key_Init();
+        main_mode = Guandao_Portion2_Recode;
+        conrtol_mode = IDLE;
+        voice_inited = 0;
+        portion2_drive_initialized = 0;
+        ips200_clear();
+        Buzzer_check(100);
+        return;
+    }
+
+    if(key1_flag)
+    {
+        key1_flag = 0;
+        portion2_drive_target_mps -= PORTION2_DRIVE_SPEED_STEP_MPS;
+        if(portion2_drive_target_mps < 0.0f)
+        {
+            portion2_drive_target_mps = 0.0f;
+        }
+        Buzzer_check(20);
+    }
+    if(key2_flag)
+    {
+        key2_flag = 0;
+        portion2_drive_target_mps += PORTION2_DRIVE_SPEED_STEP_MPS;
+        if(portion2_drive_target_mps > PORTION2_DRIVE_MAX_SPEED_MPS)
+        {
+            portion2_drive_target_mps = PORTION2_DRIVE_MAX_SPEED_MPS;
+        }
+        Buzzer_check(20);
+    }
+    if(key3_flag)
+    {
+        key3_flag = 0;
+    }
+
+    out_v_l = portion2_drive_target_mps / GUANDAO_SPEED_TO_MPS;
+    out_v_r = out_v_l;
+    out_servo = 0.0f;
+    conrtol_mode = GUANDAO;
+}
+
+static void Portion2_Drive_Mode_UI_Update(void)
+{
+    static uint32 last_ui_ms = 0;
+    uint32 now_ui_ms = system_getval_ms();
+
+    if((uint32)(now_ui_ms - last_ui_ms) < 100U) return;
+    last_ui_ms = now_ui_ms;
+    ips200_show_string(X(1), Y(0), "MODE: DRIVE");
+    ips200_show_string(X(1), Y(1), "SPEED:");
+    ips200_show_float(X(8), Y(1), portion2_drive_target_mps, 3, 1);
+    ips200_show_string(X(13), Y(1), "m/s");
 }
 
 static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
@@ -635,6 +737,12 @@ int core0_main(void)
             case Guandao_Portion2_Recode:
                 voice_inited = 0;
                 portion2_record_task();
+                break;
+
+            case Guandao_Drive:
+                voice_inited = 0;
+                Portion2_Drive_Mode_Task();
+                Portion2_Drive_Mode_UI_Update();
                 break;
 
             default : break;
