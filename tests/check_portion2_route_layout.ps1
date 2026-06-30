@@ -33,6 +33,11 @@ Assert-Contains $main "data\s*>=\s*'A'\s*&&\s*data\s*<=\s*'G'[\s\S]*?Portion2_Au
 Assert-Contains $main "data\s*>=\s*'a'\s*&&\s*data\s*<=\s*'g'[\s\S]*?Portion2_Aux_Start\(data\s*-\s*'a'\s*\+\s*1\)" 'serial g must start the all-light action'
 Assert-Contains $main "data\s*>=\s*'U'\s*&&\s*data\s*<=\s*'W'[\s\S]*?portion2_run_select_route\(data\s*-\s*'U'\s*\+\s*PORTION2_ROUTE_RETURN_5\)" 'serial U-W must run routes 10-12'
 Assert-Contains $main "data\s*>=\s*'u'\s*&&\s*data\s*<=\s*'w'[\s\S]*?portion2_run_select_route\(data\s*-\s*'u'\s*\+\s*PORTION2_ROUTE_RETURN_5\)" 'serial u-w must run routes 10-12'
+Assert-Contains $main 'uint8\s+saved_route_count\s*=\s*0' 'run UI must count saved routes instead of printing a long route list'
+Assert-Contains $main 'ips200_show_int\(X\(9\),\s*Y\(4\),\s*saved_route_count,\s*2\)' 'run UI saved route count must stay inside the screen width'
+if ($main -match 'ips200_show_string\(X\(9\),\s*Y\(4\),\s*routes') {
+    throw 'run UI must not print the full route list at X(9)'
+}
 
 $voiceMappings = @(
     'OFFLINE_VOICE_CMD_GATE1_RIGHT_BACK[\s\S]*?portion2_run_select_route\(PORTION2_ROUTE_RETURN_1\)',

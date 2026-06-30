@@ -198,20 +198,19 @@ static void Portion2_Run_Mode_UI_Update(void)
         ips200_show_string(X(6),  Y(3), buf);
     }
     {
-        char routes[32];
-        int pos = 0;
-        routes[0] = '\0';
+        uint8 saved_route_count = 0;
         for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
         {
-            if(portion2_route_length[i] > 0 && pos < (int)sizeof(routes) - 3)
+            if(portion2_route_length[i] > 0)
             {
-                if(pos) routes[pos++] = ' ';
-                routes[pos++] = '1' + i;
+                saved_route_count++;
             }
         }
-        routes[pos] = '\0';
-        ips200_show_string(X(1),  Y(4), "ROUTES: ");
-        ips200_show_string(X(9),  Y(4), routes[0] ? routes : "--");
+        ips200_show_string(X(1),  Y(4), "ROUTES:");
+        ips200_show_int(X(9),  Y(4), saved_route_count, 2);
+        ips200_show_string(X(11), Y(4), "/");
+        ips200_show_int(X(12), Y(4), PORTION2_ROUTE_COUNT, 2);
+        ips200_show_string(X(14), Y(4), "      ");
         if(portion2_run_reject_reason == 2 || portion2_run_reject_reason == 3)
         {
             ips200_show_string(X(1),  Y(5), "ROUTE EMPTY");
