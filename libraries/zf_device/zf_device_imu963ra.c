@@ -65,6 +65,8 @@ int16 imu963ra_gyro_x = 0, imu963ra_gyro_y = 0, imu963ra_gyro_z = 0;       // 三
 int16 imu963ra_acc_x = 0,  imu963ra_acc_y = 0,  imu963ra_acc_z = 0;        // 三轴加速度计数据     ACC  (accelerometer 加速度计)
 int16 imu963ra_mag_x = 0,  imu963ra_mag_y = 0,  imu963ra_mag_z = 0;        // 三轴磁力计数据      MAG  (magnetometer 磁力计)
 float imu963ra_transition_factor[3] = {4098, 14.3, 3000};                  // 转换实际值的比例
+#define IMU963RA_INIT_RETRY_COUNT (3U)
+#define IMU963RA_INIT_RETRY_DELAY_MS (50U)
 
 #if IMU963RA_USE_SOFT_IIC
 static soft_iic_info_struct imu963ra_iic_struct;
@@ -356,22 +358,33 @@ void imu963ra_get_mag (void)
 uint8 imu963ra_init (void)
 {
     uint8 return_state = 0;
-    system_delay_ms(10);                                                        // 上电延时
+    system_delay_ms(50);                                                        // 上电延时
 
 #if IMU963RA_USE_SOFT_IIC
     soft_iic_init(&imu963ra_iic_struct, IMU963RA_DEV_ADDR, IMU963RA_SOFT_IIC_DELAY, IMU963RA_SCL_PIN, IMU963RA_SDA_PIN);
 #else
     spi_init(IMU963RA_SPI, SPI_MODE0, IMU963RA_SPI_SPEED, IMU963RA_SPC_PIN, IMU963RA_SDI_PIN, IMU963RA_SDO_PIN, SPI_CS_NULL);
-    gpio_init(IMU963RA_CS_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
+    gpio_init(IMU963RA_CS_PIN, GPO, GPIO_HIGH, GPO_PUSH_PULL);
+    imu963ra_read_acc_gyro_register(IMU963RA_WHO_AM_I);                         // 读取一次设备ID 将设备设置为SPI模式
 #endif
 
     do
     {
-        imu963ra_write_acc_gyro_register(IMU963RA_FUNC_CFG_ACCESS, 0x00);       // 关闭HUB寄存器访问
-        imu963ra_write_acc_gyro_register(IMU963RA_CTRL3_C, 0x01);               // 复位设备
-        system_delay_ms(2);
-        imu963ra_write_acc_gyro_register(IMU963RA_FUNC_CFG_ACCESS, 0x00);       // 关闭HUB寄存器访问
-        if(imu963ra_acc_gyro_self_check())
+        uint8 self_check_failed = 1;
+        for(uint8 retry_index = 0; retry_index < IMU963RA_INIT_RETRY_COUNT; retry_index++)
+        {
+            imu963ra_write_acc_gyro_register(IMU963RA_FUNC_CFG_ACCESS, 0x00);   // 关闭HUB寄存器访问
+            imu963ra_write_acc_gyro_register(IMU963RA_CTRL3_C, 0x01);           // 复位设备
+            system_delay_ms(20);
+            imu963ra_write_acc_gyro_register(IMU963RA_FUNC_CFG_ACCESS, 0x00);   // 关闭HUB寄存器访问
+            if(0 == imu963ra_acc_gyro_self_check())
+            {
+                self_check_failed = 0;
+                break;
+            }
+            system_delay_ms(IMU963RA_INIT_RETRY_DELAY_MS);
+        }
+        if(self_check_failed)
         {
             zf_log(0, "IMU963RA acc and gyro self check error.");
             return_state = 1;

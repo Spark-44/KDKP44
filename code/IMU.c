@@ -57,12 +57,31 @@ static float Sqrt_Fast(float x)
 
 void IMU_init(void)
 {
-    imu963ra_init();  
+    IMU_1_Open_flag = 0;
+    IMU_Data.gyro_z = 0.0f;
+    Gyro_Offset.Zdata = 0.0f;
+    Yaw_1 = 0.0f;
+    Yaw_Straight_1 = 0.0f;
+
+    if(0 == imu963ra_init())
+    {
+        IMU_1_Open_flag = 1;
+    }
+
+    if(IMU_1_Open_flag != 1)
+    {
+        return;
+    }
+
     IMU_gyro_Offset_Init();
 }
 
 void IMU_gyro_Offset_Init(void)
 {
+    if(IMU_1_Open_flag != 1)
+    {
+        return;
+    }
 
     Gyro_Offset.Zdata = 0;
     for (uint16_t i = 0; i < 1000; i++)
@@ -77,6 +96,10 @@ void IMU_gyro_Offset_Init(void)
 
 void IMU_GetValues(void)
 {
+    if(IMU_1_Open_flag != 1)
+    {
+        return;
+    }
 
     IMU_Data.gyro_z = ((float) imu963ra_gyro_z - Gyro_Offset.Zdata)* PI / 180.0f/ 14.3f;
     IMU_Update_Straight_Yaw();
@@ -110,12 +133,13 @@ void IMU_Handle_180(void)
 
 void IMU_data_get(void)
 {
-    imu963ra_get_gyro();
-
-    if(IMU_1_Open_flag==1)
+    if(IMU_1_Open_flag != 1)
     {
-        IMU_GetValues();
+        return;
     }
+
+    imu963ra_get_gyro();
+    IMU_GetValues();
 }
 
 //void IMU_text(void)

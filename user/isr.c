@@ -93,8 +93,7 @@ IFX_INTERRUPT(cc61_pit_ch1_isr, 0, CCU6_1_CH1_ISR_PRIORITY)
         {
                 Key_Scan();
 
-                imu963ra_get_gyro();
-                IMU_GetValues();
+                IMU_data_get();
 
                 switch(conrtol_mode)
                 {
