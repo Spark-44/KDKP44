@@ -12,6 +12,14 @@
 extern int num;
 static uint8 voice_inited = 0;
 
+#define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
+#define PORTION2_DRIVE_SPEED_MAX_MPS  (5.0f)
+
+static float portion2_drive_target_mps = 0.0f;
+static uint8 portion2_drive_active = 0;
+static uint32 portion2_drive_k4_start_ms = 0;
+static uint8 portion2_drive_k4_wait_release = 0;
+
 static void Guandao_Rear_Motor_Update(void)
 {
     float target_mps = 0.0f;
@@ -144,6 +152,147 @@ static void Portion2_Dot_Matrix_Scan_Update(void)
         last_scan_ms = now_ms;
         dot_matrix_screen_scan();
     }
+}
+
+static void Portion2_Drive_Mode_Stop(void)
+{
+    portion2_drive_target_mps = 0.0f;
+    portion2_drive_active = 0;
+    portion2_drive_k4_start_ms = 0;
+    portion2_drive_k4_wait_release = 0;
+    out_v_l = 0.0f;
+    out_v_r = 0.0f;
+    out_servo = 0.0f;
+    rear_motor_stop();
+}
+
+static void Portion2_Drive_Mode_Enter(void)
+{
+    Portion2_Drive_Mode_Stop();
+    portion2_drive_active = 1;
+    if(gpio_get_level(KEY4) == 0)
+    {
+        portion2_drive_k4_wait_release = 1;
+    }
+    main_mode = Guandao_Drive;
+    conrtol_mode = GUANDAO;
+    ips200_clear();
+}
+
+static uint8 portion2_drive_k4_long_event(void)
+{
+    uint32 now_ms = system_getval_ms();
+    uint8 key_down = (gpio_get_level(KEY4) == 0);
+    uint8 long_event = 0;
+
+    if(key4_flag)
+    {
+        key4_flag = 0;
+    }
+
+    if(portion2_drive_k4_wait_release)
+    {
+        if(!key_down)
+        {
+            portion2_drive_k4_wait_release = 0;
+            portion2_drive_k4_start_ms = 0;
+        }
+        return 0;
+    }
+
+    if(key_down)
+    {
+        if(portion2_drive_k4_start_ms == 0) portion2_drive_k4_start_ms = now_ms;
+        if((uint32)(now_ms - portion2_drive_k4_start_ms) > 1500U)
+        {
+            long_event = 1;
+            portion2_drive_k4_wait_release = 1;
+        }
+    }
+    else
+    {
+        portion2_drive_k4_start_ms = 0;
+    }
+
+    return long_event;
+}
+
+static void Portion2_Drive_Mode_Key_Handle(void)
+{
+    if(key1_flag)
+    {
+        key1_flag = 0;
+        portion2_drive_target_mps -= PORTION2_DRIVE_SPEED_STEP_MPS;
+        if(portion2_drive_target_mps < 0.0f)
+        {
+            portion2_drive_target_mps = 0.0f;
+        }
+        Buzzer_check(20);
+    }
+
+    if(key2_flag)
+    {
+        key2_flag = 0;
+        portion2_drive_target_mps += PORTION2_DRIVE_SPEED_STEP_MPS;
+        if(portion2_drive_target_mps > PORTION2_DRIVE_SPEED_MAX_MPS)
+        {
+            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MAX_MPS;
+        }
+        Buzzer_check(20);
+    }
+
+    if(key3_flag)
+    {
+        key3_flag = 0;
+    }
+
+    if(portion2_drive_k4_long_event())
+    {
+        Portion2_Drive_Mode_Stop();
+        portion2_mode_key_transition_lock();
+        portion2_record_enter_mode();
+        Key_Init();
+        main_mode = Guandao_Portion2_Recode;
+        conrtol_mode = IDLE;
+        ips200_clear();
+        Buzzer_check(80);
+    }
+}
+
+static void Portion2_Drive_Mode_Task(void)
+{
+    if(!portion2_drive_active)
+    {
+        Portion2_Drive_Mode_Enter();
+    }
+
+    Portion2_Drive_Mode_Key_Handle();
+    out_servo = 0.0f;
+    rear_motor_set_target_mps(portion2_drive_target_mps);
+    if(portion2_drive_target_mps <= 0.0f)
+    {
+        rear_motor_stop();
+    }
+    else
+    {
+        rear_motor_pid_update_100ms();
+    }
+}
+
+static void Portion2_Drive_Mode_UI_Update(void)
+{
+    static uint32 last_ui_ms = 0;
+    uint32 now_ui_ms = system_getval_ms();
+    if((uint32)(now_ui_ms - last_ui_ms) < 100U) return;
+    last_ui_ms = now_ui_ms;
+
+    ips200_show_string(X(1), Y(0), "MODE: DRIVE");
+    ips200_show_string(X(1), Y(1), "SPEED:");
+    ips200_show_float(X(9), Y(1), portion2_drive_target_mps, 3, 1);
+    ips200_show_string(X(14), Y(1), "m/s");
+    ips200_show_string(X(1), Y(2), "K1 -1m/s");
+    ips200_show_string(X(1), Y(3), "K2 +1m/s");
+    ips200_show_string(X(1), Y(4), "K4 HOLD REC");
 }
 
 static void Portion2_Run_Mode_Key_Handle(void)
@@ -636,10 +785,19 @@ int core0_main(void)
                 portion2_record_task();
                 break;
 
+            case Guandao_Drive:
+                voice_inited = 0;
+                Portion2_Drive_Mode_Task();
+                Portion2_Drive_Mode_UI_Update();
+                break;
+
             default : break;
 
         }
-        Guandao_Rear_Motor_Update();
+        if(main_mode != Guandao_Drive)
+        {
+            Guandao_Rear_Motor_Update();
+        }
 //                    ips200_show_int(X(10),  Y(13),conrtol_mode ,5);
 //                    ips200_show_float(X(10),  Y(12),angle_speed ,5 ,5);
 //                    VeerMoter_Set(10000);
