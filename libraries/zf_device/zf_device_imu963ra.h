@@ -72,7 +72,7 @@
 #else
 
 //====================================================硬件 SPI 驱动====================================================
-#define IMU963RA_SPI_SPEED                          (10 * 1000 * 1000)          // 硬件 SPI 速率
+#define IMU963RA_SPI_SPEED                          (1 * 1000 * 1000)           // 硬件 SPI 速率
 #define IMU963RA_SPI                                (SPI_0           )          // 硬件 SPI 号
 #define IMU963RA_SPC_PIN                            (SPI0_SCLK_P20_11)          // 硬件 SPI SCK 引脚
 #define IMU963RA_SDI_PIN                            (SPI0_MOSI_P20_14)          // 硬件 SPI MOSI 引脚

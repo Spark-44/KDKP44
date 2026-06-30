@@ -67,6 +67,7 @@ int16 imu963ra_mag_x = 0,  imu963ra_mag_y = 0,  imu963ra_mag_z = 0;        // 三
 float imu963ra_transition_factor[3] = {4098, 14.3, 3000};                  // 转换实际值的比例
 #define IMU963RA_INIT_RETRY_COUNT (3U)
 #define IMU963RA_INIT_RETRY_DELAY_MS (50U)
+static uint8 imu963ra_mag_available = 0;
 
 #if IMU963RA_USE_SOFT_IIC
 static soft_iic_info_struct imu963ra_iic_struct;
@@ -334,6 +335,10 @@ void imu963ra_get_gyro (void)
 void imu963ra_get_mag (void)
 {
     uint8 temp_status;
+    if(!imu963ra_mag_available)
+    {
+        return;
+    }
     uint8 dat[6];
 
     imu963ra_write_acc_gyro_register(IMU963RA_FUNC_CFG_ACCESS, 0x40);
@@ -386,7 +391,6 @@ uint8 imu963ra_init (void)
         }
         if(self_check_failed)
         {
-            zf_log(0, "IMU963RA acc and gyro self check error.");
             return_state = 1;
             break;
         }
@@ -501,14 +505,14 @@ uint8 imu963ra_init (void)
 
         if(imu963ra_mag_self_check())
         {
-            zf_log(0, "IMU963RA mag self check error.");
-            return_state = 1;
+            imu963ra_mag_available = 0;
             break;            
         }
 
         // IMU963RA_MAG_ADDR 寄存器
         // 设置为 0x09 磁力计量程为 2G   获取到的磁力计数据除以 12000   可以转化为带物理单位的数据 单位 G(高斯)
         // 设置为 0x19 磁力计量程为 8G   获取到的磁力计数据除以 3000    可以转化为带物理单位的数据 单位 G(高斯)
+        imu963ra_mag_available = 1;
         switch(IMU963RA_MAG_SAMPLE_DEFAULT)
         {
             default:
