@@ -514,7 +514,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
         voice_drive_action_stop();
-        portion2_run_select_back_route(PORTION2_ROUTE_SNAKE);
+        portion2_run_select_route(PORTION2_ROUTE_SNAKE);
     }
     else if(data >= 'u' && data <= 'w')
     {
@@ -686,8 +686,7 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
             break;
 
         case OFFLINE_VOICE_CMD_ROUTE_STRAIGHT:
-            voice_drive_action_stop();
-            portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
+            Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M);
             break;
 
         case OFFLINE_VOICE_CMD_ROUTE_SNAKE:
@@ -721,23 +720,20 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
             break;
 
         case OFFLINE_VOICE_CMD_BACK_STRAIGHT:
-            voice_drive_action_stop();
-            portion2_run_select_back_route(PORTION2_ROUTE_STRAIGHT);
+            Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M);
             break;
 
         case OFFLINE_VOICE_CMD_BACK_SNAKE:
             voice_drive_action_stop();
-            portion2_run_select_back_route(PORTION2_ROUTE_SNAKE);
-            break;
-
-        case OFFLINE_VOICE_CMD_FORWARD_10M:
-            voice_drive_action_stop();
             portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
             break;
 
+        case OFFLINE_VOICE_CMD_FORWARD_10M:
+            Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M);
+            break;
+
         case OFFLINE_VOICE_CMD_BACKWARD_10M:
-            voice_drive_action_stop();
-            portion2_run_select_back_route(PORTION2_ROUTE_STRAIGHT);
+            Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M);
             break;
 
         case OFFLINE_VOICE_CMD_SNAKE_FORWARD:
@@ -747,7 +743,7 @@ static void Portion2_Voice_Command_Handle(uint8 cmd_id, void *user_data)
 
         case OFFLINE_VOICE_CMD_SNAKE_BACKWARD:
             voice_drive_action_stop();
-            portion2_run_select_back_route(PORTION2_ROUTE_SNAKE);
+            portion2_run_select_route(PORTION2_ROUTE_STRAIGHT);
             break;
 
         case OFFLINE_VOICE_CMD_CCW_CIRCLE:

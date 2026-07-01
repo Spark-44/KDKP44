@@ -2356,6 +2356,7 @@ uint8 portion2_mode_k4_short_event(void)
 void portion2_record_enter_mode(void)
 {
     portion2_record_key_state_reset();
+    daoche_flag = 0;
     if(portion2_record_route >= PORTION2_ROUTE_COUNT)
     {
         portion2_record_route = 0;
@@ -2364,6 +2365,11 @@ void portion2_record_enter_mode(void)
     {
         portion2_record_state = 2;
     }
+}
+
+static uint8 portion2_route_uses_reverse_drive(uint8 route_id)
+{
+    return (route_id == PORTION2_ROUTE_STRAIGHT) ? 1U : 0U;
 }
 
 void portion2_record_task(void)
@@ -2469,6 +2475,7 @@ void portion2_record_task(void)
         out_v_l = 0.0f;
         out_v_r = 0.0f;
         out_servo = 0.0f;
+        daoche_flag = 0;
         main_mode = Guandao_Drive;
         route_setting_choice = 1;
         conrtol_mode = GUANDAO;
@@ -2493,6 +2500,7 @@ void portion2_record_task(void)
     {
         portion2_mode_key_transition_lock();
         portion2_record_key_state_reset();
+        daoche_flag = 0;
         main_mode = Guandao_Voice;
         route_setting_choice = 3;
         conrtol_mode = GUANDAO;
@@ -2511,7 +2519,9 @@ void portion2_record_task(void)
             if(k3_short)
             {
                 guandao_state_init(&passage);
-                passage.current_state.theta = Yaw_1;
+                daoche_flag = portion2_route_uses_reverse_drive(portion2_record_route);
+                passage.current_state.theta = daoche_flag ? Yaw_1 + 180.0f : Yaw_1;
+                angle_plan(&passage.current_state.theta);
                 Encoder_Get(&guandao_ecd);
                 portion2_route_length[portion2_record_route] = 0;
                 portion2_route_gps_count[portion2_record_route] = 0;
@@ -2537,6 +2547,7 @@ void portion2_record_task(void)
                 portion2_record_try_gps_point(1);
                 portion2_record_capture_final_pose();
                 portion2_record_state = 2;
+                daoche_flag = 0;
                 portion2_serial_log_record_event("STOP");
                 Buzzer_check(50);
             }
@@ -2552,6 +2563,7 @@ void portion2_record_task(void)
                         portion2_record_route++;
                     }
                     portion2_record_state = 2;
+                    daoche_flag = 0;
                     portion2_serial_log_record_event("NEXT");
                     Buzzer_check(100);
                 }
@@ -2563,6 +2575,7 @@ void portion2_record_task(void)
             break;
         default:
             portion2_record_reset();
+            daoche_flag = 0;
             break;
     }
 
@@ -2636,6 +2649,9 @@ void portion2_run_select_route(uint8 route_id)
         return;
     }
     portion2_selected_route = route_id;
+    portion2_run_drive_reverse = portion2_route_uses_reverse_drive(route_id);
+    daoche_flag = portion2_run_drive_reverse;
+    conrtol_mode = portion2_run_drive_reverse ? DAOCHE : GUANDAO;
     portion2_state_flag = 1;
 }
 
@@ -2665,29 +2681,13 @@ void portion2_run_select_reverse_route(uint8 route_id)
 
 void portion2_run_select_back_route(uint8 route_id)
 {
-    portion2_run_reject_reason = 0;
-    portion2_run_reverse = 0;
-    portion2_run_drive_reverse = 0;
-    daoche_flag = 0;
-    conrtol_mode = GUANDAO;
     if(route_id != PORTION2_ROUTE_STRAIGHT && route_id != PORTION2_ROUTE_SNAKE)
     {
         portion2_run_reject_reason = 3;
         Buzzer_check(80); Buzzer_check(80);
         return;
     }
-    if(!portion2_route_ready_for_run(route_id))
-    {
-        portion2_run_reject_reason = 4;
-        Buzzer_check(80); Buzzer_check(80);
-        return;
-    }
-    portion2_selected_route = route_id;
-    portion2_run_reverse = 1;
-    portion2_run_drive_reverse = 1;
-    daoche_flag = 1;
-    conrtol_mode = DAOCHE;
-    portion2_state_flag = 1;
+    portion2_run_select_route(route_id);
 }
 
 void portion2_run_stop(void)
@@ -2782,7 +2782,7 @@ void portion2_run_task(void)
                     ? portion2_route_start_yaw[portion2_selected_route]
                     : portion2_route_final_yaw[portion2_selected_route];
             portion2_run_final_yaw = guandao_normalize_angle(recorded_terminal_yaw + yaw_delta);
-            terminal_path_yaw = portion2_run_reverse
+            terminal_path_yaw = (portion2_run_reverse || portion2_run_drive_reverse)
                     ? guandao_normalize_angle(portion2_run_final_yaw + 180.0f)
                     : portion2_run_final_yaw;
             portion2_shape_terminal_pose(terminal_path_yaw);
