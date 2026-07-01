@@ -12,10 +12,12 @@
 extern int num;
 static uint8 voice_inited = 0;
 
+#define PORTION2_DRIVE_SPEED_MIN_MPS  (1.5f)
 #define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
 #define PORTION2_DRIVE_SPEED_MAX_MPS  (5.0f)
 
 static float portion2_drive_target_mps = 0.0f;
+static uint8 portion2_drive_full_power = 0;
 static uint8 portion2_drive_active = 0;
 static uint32 portion2_drive_k4_start_ms = 0;
 static uint8 portion2_drive_k4_wait_release = 0;
@@ -157,6 +159,7 @@ static void Portion2_Dot_Matrix_Scan_Update(void)
 static void Portion2_Drive_Mode_Stop(void)
 {
     portion2_drive_target_mps = 0.0f;
+    portion2_drive_full_power = 0;
     portion2_drive_active = 0;
     portion2_drive_k4_start_ms = 0;
     portion2_drive_k4_wait_release = 0;
@@ -222,10 +225,26 @@ static void Portion2_Drive_Mode_Key_Handle(void)
     if(key1_flag)
     {
         key1_flag = 0;
-        portion2_drive_target_mps -= PORTION2_DRIVE_SPEED_STEP_MPS;
-        if(portion2_drive_target_mps < 0.0f)
+        if(portion2_drive_full_power)
+        {
+            portion2_drive_full_power = 0;
+            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MAX_MPS;
+        }
+        else if(portion2_drive_target_mps <= PORTION2_DRIVE_SPEED_MIN_MPS)
         {
             portion2_drive_target_mps = 0.0f;
+        }
+        else if(portion2_drive_target_mps <= 2.0f)
+        {
+            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
+        }
+        else
+        {
+            portion2_drive_target_mps -= PORTION2_DRIVE_SPEED_STEP_MPS;
+            if(portion2_drive_target_mps < PORTION2_DRIVE_SPEED_MIN_MPS)
+            {
+                portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
+            }
         }
         Buzzer_check(20);
     }
@@ -233,10 +252,25 @@ static void Portion2_Drive_Mode_Key_Handle(void)
     if(key2_flag)
     {
         key2_flag = 0;
-        portion2_drive_target_mps += PORTION2_DRIVE_SPEED_STEP_MPS;
-        if(portion2_drive_target_mps > PORTION2_DRIVE_SPEED_MAX_MPS)
+        if(portion2_drive_target_mps >= PORTION2_DRIVE_SPEED_MAX_MPS)
         {
-            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MAX_MPS;
+            portion2_drive_full_power = 1;
+        }
+        else if(portion2_drive_target_mps <= 0.0f)
+        {
+            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
+        }
+        else if(portion2_drive_target_mps <= PORTION2_DRIVE_SPEED_MIN_MPS)
+        {
+            portion2_drive_target_mps = 2.0f;
+        }
+        else
+        {
+            portion2_drive_target_mps += PORTION2_DRIVE_SPEED_STEP_MPS;
+            if(portion2_drive_target_mps > PORTION2_DRIVE_SPEED_MAX_MPS)
+            {
+                portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MAX_MPS;
+            }
         }
         Buzzer_check(20);
     }
@@ -268,13 +302,17 @@ static void Portion2_Drive_Mode_Task(void)
 
     Portion2_Drive_Mode_Key_Handle();
     out_servo = 0.0f;
-    rear_motor_set_target_mps(portion2_drive_target_mps);
-    if(portion2_drive_target_mps <= 0.0f)
+    if(portion2_drive_full_power)
+    {
+        rear_motor_set_full_power();
+    }
+    else if(portion2_drive_target_mps <= 0.0f)
     {
         rear_motor_stop();
     }
     else
     {
+        rear_motor_set_target_mps(portion2_drive_target_mps);
         rear_motor_pid_update_100ms();
     }
 }
@@ -288,8 +326,15 @@ static void Portion2_Drive_Mode_UI_Update(void)
 
     ips200_show_string(X(1), Y(0), "MODE: DRIVE");
     ips200_show_string(X(1), Y(1), "SPEED:");
-    ips200_show_float(X(9), Y(1), portion2_drive_target_mps, 3, 1);
-    ips200_show_string(X(14), Y(1), "m/s");
+    if(portion2_drive_full_power)
+    {
+        ips200_show_string(X(9), Y(1), "FULL 100% ");
+    }
+    else
+    {
+        ips200_show_float(X(9), Y(1), portion2_drive_target_mps, 3, 1);
+        ips200_show_string(X(14), Y(1), "m/s");
+    }
     ips200_show_string(X(1), Y(2), "K1 -1m/s");
     ips200_show_string(X(1), Y(3), "K2 +1m/s");
     ips200_show_string(X(1), Y(4), "K4 HOLD REC");

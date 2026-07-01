@@ -90,6 +90,19 @@ void rear_motor_stop(void)
     current_pwm = 0;
 }
 
+void rear_motor_set_full_power(void)
+{
+    target_mps = 0.0f;
+    integral = 0.0f;
+    last_error = 0.0f;
+    last_pwm = PWM_DUTY_MAX;
+    current_pwm = PWM_DUTY_MAX;
+    pwm_set_duty(PWM_L, PWM_DUTY_MAX);
+    gpio_set_level(MOTOR_GPIO_L, 1);
+    pwm_set_duty(PWM_R, PWM_DUTY_MAX);
+    gpio_set_level(MOTOR_GPIO_R, 1);
+}
+
 void rear_motor_set_target_mps(float mps)
 {
     if(mps > REAR_SPEED_MAX_MPS)  mps = REAR_SPEED_MAX_MPS;

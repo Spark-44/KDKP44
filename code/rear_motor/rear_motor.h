@@ -38,6 +38,8 @@ void rear_motor_init(void);
 
 void rear_motor_stop(void);
 
+void rear_motor_set_full_power(void);
+
 void rear_motor_set_target_mps(float target_mps);
 
 void rear_motor_encoder_update_10ms(void);
