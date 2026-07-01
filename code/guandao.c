@@ -40,6 +40,52 @@ float portion2_route_final_yaw[PORTION2_ROUTE_COUNT] = {0};
 const uint8 portion2_route_required_gps_count[PORTION2_ROUTE_COUNT] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
 static uint8 portion2_gps_auto_has_point[PORTION2_ROUTE_COUNT] = {0};
 static state_t portion2_gps_auto_last_state[PORTION2_ROUTE_COUNT];
+static state_t portion2_route_storage_extension[PORTION2_ROUTE_STORAGE_EXTENSION_POINTS];
+static GPS_state portion2_gps_storage_extension[PORTION2_GPS_STORAGE_EXTENSION_POINTS];
+
+state_t portion2_route_storage_get(uint16 index)
+{
+    state_t empty = {0};
+
+    if(index >= PORTION2_TOTAL_ROUTE_POINTS) return empty;
+    if(index < MAX_LENGTH_INDEX) return passage.recode_map[index];
+    return portion2_route_storage_extension[index - MAX_LENGTH_INDEX];
+}
+
+void portion2_route_storage_set(uint16 index, state_t point)
+{
+    if(index >= PORTION2_TOTAL_ROUTE_POINTS) return;
+    if(index < MAX_LENGTH_INDEX)
+    {
+        passage.recode_map[index] = point;
+    }
+    else
+    {
+        portion2_route_storage_extension[index - MAX_LENGTH_INDEX] = point;
+    }
+}
+
+GPS_state portion2_gps_storage_get(uint16 index)
+{
+    GPS_state empty = {0};
+
+    if(index >= PORTION2_TOTAL_GPS_COUNT) return empty;
+    if(index < MAX_GPS_RECODE) return passage.recode_gpsmap[index];
+    return portion2_gps_storage_extension[index - MAX_GPS_RECODE];
+}
+
+void portion2_gps_storage_set(uint16 index, GPS_state point)
+{
+    if(index >= PORTION2_TOTAL_GPS_COUNT) return;
+    if(index < MAX_GPS_RECODE)
+    {
+        passage.recode_gpsmap[index] = point;
+    }
+    else
+    {
+        portion2_gps_storage_extension[index - MAX_GPS_RECODE] = point;
+    }
+}
 
 int16 daoche_point_length = 0;    
 uint8 daoche_flag =0;                    
@@ -1673,7 +1719,7 @@ static uint8 portion2_route_ready_for_run(uint8 route_id)
     if(gps_count < required) return 0;
 
     gps_offset = portion2_route_gps_offset(route_id);
-    last_gps_raw_point = passage.recode_gpsmap[gps_offset + gps_count - 1].cheak_flag;
+    last_gps_raw_point = portion2_gps_storage_get(gps_offset + gps_count - 1).cheak_flag;
     if(last_gps_raw_point < 0 || last_gps_raw_point >= (int16)portion2_route_length[route_id]) return 0;
     if(last_gps_raw_point < (int16)portion2_route_length[route_id] - 1 - PORTION2_GPS_END_MAX_RAW_GAP) return 0;
 
@@ -1713,7 +1759,8 @@ static float portion2_recorded_route_distance(uint8 route_id)
 
     for(uint16 i = 1; i < length; i++)
     {
-        distance += get_distance(passage.recode_map[offset + i - 1], passage.recode_map[offset + i]);
+        distance += get_distance(portion2_route_storage_get(offset + i - 1),
+                                 portion2_route_storage_get(offset + i));
     }
     return distance;
 }
@@ -1804,11 +1851,12 @@ void portion2_serial_dump_route(uint8 route_id)
 
     for(uint16 i = 0; i < len; i++)
     {
-        portion2_serial_write_state_point("[P2-DUMP]", route_id, i, passage.recode_map[offset + i]);
+        portion2_serial_write_state_point("[P2-DUMP]", route_id, i, portion2_route_storage_get(offset + i));
     }
     for(uint8 i = 0; i < portion2_route_gps_count[route_id] && i < PORTION2_GPS_PER_ROUTE; i++)
     {
-        portion2_serial_write_gps_point("[P2-DUMP-GPS]", route_id, i, passage.recode_gpsmap[portion2_route_gps_offset(route_id) + i]);
+        portion2_serial_write_gps_point("[P2-DUMP-GPS]", route_id, i,
+                                        portion2_gps_storage_get(portion2_route_gps_offset(route_id) + i));
     }
 
     uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] route end\r\n");
@@ -1835,16 +1883,16 @@ static void portion2_record_point(void)
 
     if(len == 0)
     {
-        passage.recode_map[offset] = passage.current_state;
+        portion2_route_storage_set(offset, passage.current_state);
         portion2_route_length[portion2_record_route] = 1;
         portion2_route_saved_flag[portion2_record_route] = 0;
         portion2_serial_write_state_point("[P2-REC]", portion2_record_route, 0, passage.current_state);
         return;
     }
 
-    if(get_distance(passage.current_state, passage.recode_map[offset + len - 1]) >= recode_threshold)
+    if(get_distance(passage.current_state, portion2_route_storage_get(offset + len - 1)) >= recode_threshold)
     {
-        passage.recode_map[offset + len] = passage.current_state;
+        portion2_route_storage_set(offset + len, passage.current_state);
         portion2_route_length[portion2_record_route]++;
         portion2_route_saved_flag[portion2_record_route] = 0;
         portion2_serial_write_state_point("[P2-REC]", portion2_record_route, len, passage.current_state);
@@ -1962,12 +2010,12 @@ static uint8 portion2_gps_candidate_valid(uint8 route_id)
         return 1;
     }
     previous_index = portion2_route_gps_offset(route_id) + gps_count - 1;
-    if(previous_index >= MAX_GPS_RECODE)
+    if(previous_index >= PORTION2_TOTAL_GPS_COUNT)
     {
         portion2_gps_reject_reason = PORTION2_GPS_REJECT_INDEX;
         return 0;
     }
-    previous = passage.recode_gpsmap[previous_index];
+    previous = portion2_gps_storage_get(previous_index);
     gps_distance = (float)get_two_points_distance(previous.lat, previous.lon, gnss.latitude, gnss.longitude);
     if(gps_distance < PORTION2_GPS_RECORD_MIN_MOVE_M)
     {
@@ -2047,6 +2095,7 @@ static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
 {
     uint8 gps_count;
     uint16 gps_index;
+    GPS_state gps_point;
 
     if(portion2_record_route >= PORTION2_ROUTE_COUNT) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INDEX);
     gps_count = portion2_route_gps_count[portion2_record_route];
@@ -2068,20 +2117,21 @@ static uint8 portion2_record_try_gps_point(uint8 force_endpoint)
     }
 
     gps_index = portion2_route_gps_offset(portion2_record_route) + gps_count;
-    if(gps_index >= MAX_GPS_RECODE) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INDEX);
+    if(gps_index >= PORTION2_TOTAL_GPS_COUNT) return portion2_record_reject_gps(PORTION2_GPS_REJECT_INDEX);
 
-    passage.recode_gpsmap[gps_index].lat = gnss.latitude;
-    passage.recode_gpsmap[gps_index].lon = gnss.longitude;
-    passage.recode_gpsmap[gps_index].theta = Yaw_1;
-    passage.recode_gpsmap[gps_index].cheak_flag = (portion2_route_length[portion2_record_route] > 0)
+    gps_point.lat = gnss.latitude;
+    gps_point.lon = gnss.longitude;
+    gps_point.theta = Yaw_1;
+    gps_point.cheak_flag = (portion2_route_length[portion2_record_route] > 0)
             ? (int16)portion2_route_length[portion2_record_route] - 1 : 0;
+    portion2_gps_storage_set(gps_index, gps_point);
     portion2_route_gps_count[portion2_record_route]++;
     passage.gps_recode_length = portion2_route_gps_offset(portion2_record_route) + portion2_route_gps_count[portion2_record_route];
     portion2_gps_auto_last_state[portion2_record_route] = passage.current_state;
     portion2_gps_auto_has_point[portion2_record_route] = 1;
     portion2_route_saved_flag[portion2_record_route] = 0;
     portion2_gps_reject_reason = PORTION2_GPS_REJECT_NONE;
-    portion2_serial_write_gps_point("[P2-REC-GPS]", portion2_record_route, gps_count, passage.recode_gpsmap[gps_index]);
+    portion2_serial_write_gps_point("[P2-REC-GPS]", portion2_record_route, gps_count, gps_point);
     Buzzer_check(30);
     return 1;
 }
@@ -2150,7 +2200,6 @@ void portion2_record_reset(void)
         portion2_gps_auto_has_point[i] = 0;
         portion2_route_saved_flag[i] = 0;
     }
-    passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
     passage.gps_recode_length = 0;
 }
 
@@ -2390,7 +2439,6 @@ void portion2_record_task(void)
                 guandao_state_init(&passage);
                 passage.current_state.theta = Yaw_1;
                 Encoder_Get(&guandao_ecd);
-                passage.length_index = PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS;
                 portion2_route_length[portion2_record_route] = 0;
                 portion2_route_gps_count[portion2_record_route] = 0;
                 portion2_route_start_yaw[portion2_record_route] = Yaw_1;
@@ -2616,11 +2664,11 @@ void portion2_run_task(void)
             {
                 if(portion2_run_reverse)
                 {
-                    portion_2.recode_map[i] = passage.recode_map[offset + len - 1 - i];
+                    portion_2.recode_map[i] = portion2_route_storage_get(offset + len - 1 - i);
                 }
                 else
                 {
-                    portion_2.recode_map[i] = passage.recode_map[offset + i];
+                    portion_2.recode_map[i] = portion2_route_storage_get(offset + i);
                 }
             }
             portion_2.length_index = len;
@@ -2634,7 +2682,7 @@ void portion2_run_task(void)
                 uint16 gps_offset = portion2_route_gps_offset(portion2_selected_route);
                 if(portion2_run_reverse)
                 {
-                    GPS_state gps_point = passage.recode_gpsmap[gps_offset + portion_2.gps_recode_length - 1 - i];
+                    GPS_state gps_point = portion2_gps_storage_get(gps_offset + portion_2.gps_recode_length - 1 - i);
                     if(gps_point.cheak_flag < 0 || gps_point.cheak_flag >= len)
                     {
                         gps_point.cheak_flag = 0;
@@ -2647,7 +2695,7 @@ void portion2_run_task(void)
                 }
                 else
                 {
-                    portion_2.recode_gpsmap[i] = passage.recode_gpsmap[gps_offset + i];
+                    portion_2.recode_gpsmap[i] = portion2_gps_storage_get(gps_offset + i);
                 }
             }
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;

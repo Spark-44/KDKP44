@@ -14,7 +14,7 @@ extern float kd ;
 #define RECODE_PASSAGE                  (9)   
 #define RECODE_PASSAGE_TWO                  (8)   
 #define RECODE_PASSAGE_THREE                  (7)   
-#define RECODE_PASSAGE_FOUR                  (6)   
+#define RECODE_PASSAGE_GPS_CONT              (6)
 #define RECODE_PASSAGE_FIF                  (5)   
 #define RECODE_PORTION_THREE                  (4)   
 

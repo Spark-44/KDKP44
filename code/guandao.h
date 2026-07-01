@@ -5,23 +5,31 @@
 
 #define ONE_TICK_DISTANCE                      0.000378f
 #define PORTION2_ROUTE_COUNT                   12
-#define PORTION2_ROUTE_MAX_POINTS              49
-#define PORTION2_TOTAL_ROUTE_POINTS            588
+#define PORTION2_ROUTE_MAX_POINTS              75
+#define PORTION2_TOTAL_ROUTE_POINTS            900
 #define MAX_LENGTH_INDEX                       588
-#define PORTION2_GPS_PER_ROUTE                 20
-#define PORTION2_TOTAL_GPS_COUNT               240
+#define PORTION2_ROUTE_STORAGE_EXTENSION_POINTS (PORTION2_TOTAL_ROUTE_POINTS - MAX_LENGTH_INDEX)
+#define PORTION2_GPS_PER_ROUTE                 30
+#define PORTION2_TOTAL_GPS_COUNT               360
 #define MAX_GPS_RECODE                         240
+#define PORTION2_GPS_STORAGE_EXTENSION_POINTS  (PORTION2_TOTAL_GPS_COUNT - MAX_GPS_RECODE)
 #if PORTION2_TOTAL_ROUTE_POINTS != PORTION2_ROUTE_COUNT * PORTION2_ROUTE_MAX_POINTS
 #error "PORTION2_TOTAL_ROUTE_POINTS must match route count and per-route capacity"
 #endif
-#if MAX_LENGTH_INDEX < PORTION2_TOTAL_ROUTE_POINTS
-#error "MAX_LENGTH_INDEX is too small for portion-2 routes"
+#if PORTION2_ROUTE_STORAGE_EXTENSION_POINTS <= 0
+#error "Portion-2 route storage extension is not required"
+#endif
+#if PORTION2_ROUTE_MAX_POINTS > MAX_LENGTH_INDEX
+#error "One portion-2 route does not fit the runtime route buffer"
 #endif
 #if PORTION2_TOTAL_GPS_COUNT != PORTION2_ROUTE_COUNT * PORTION2_GPS_PER_ROUTE
 #error "PORTION2_TOTAL_GPS_COUNT must match route count and per-route capacity"
 #endif
-#if MAX_GPS_RECODE < PORTION2_TOTAL_GPS_COUNT
-#error "MAX_GPS_RECODE is too small for portion-2 GPS records"
+#if PORTION2_GPS_STORAGE_EXTENSION_POINTS <= 0
+#error "Portion-2 GPS storage extension is not required"
+#endif
+#if PORTION2_GPS_PER_ROUTE > MAX_GPS_RECODE
+#error "One portion-2 route does not fit the runtime GPS buffer"
 #endif
 #define PORTION2_ROUTE_1                       0
 #define PORTION2_ROUTE_2                       1
@@ -60,6 +68,11 @@ typedef struct {
         float theta;
         int16 cheak_flag;
 }GPS_state;
+
+state_t portion2_route_storage_get(uint16 index);
+void portion2_route_storage_set(uint16 index, state_t point);
+GPS_state portion2_gps_storage_get(uint16 index);
+void portion2_gps_storage_set(uint16 index, GPS_state point);
 
 typedef struct guandao{
         state_t current_state;              

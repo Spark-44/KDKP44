@@ -36,17 +36,23 @@ The route and GPS layout markers change. Existing 49-point/20-GPS records are
 invalidated on first boot with the new firmware; all routes must be recorded and
 saved again. Runtime code must not attempt to migrate or reinterpret old data.
 
-## RAM Impact
+## RAM Layout
 
-`MAX_LENGTH_INDEX` becomes 900 and `MAX_GPS_RECODE` becomes 360. Because the
-existing `guandao_state` embeds both arrays, this increases static RAM use by
-approximately 40 KB across the existing state objects. The implementation keeps
-the current structure to avoid a broader ownership refactor.
+The existing linker map leaves about 15 KB free in DSRAM1, so expanding every
+embedded `guandao_state` array would not link. `MAX_LENGTH_INDEX` therefore
+remains 588 and `MAX_GPS_RECODE` remains 240.
+
+The route repository uses the existing arrays for the first 588 inertial and 240
+GPS records, then uses dedicated extension arrays for the remaining 312 inertial
+and 120 GPS records. Accessor functions hide this split from recording, runtime
+loading, route dumps, and Flash persistence. This adds approximately 6.6 KB of
+static RAM instead of approximately 40 KB.
 
 ## Verification
 
 - Source-contract tests verify 75/30 per-route capacity and 900/360 totals.
 - Tests verify inertial data still spans pages 9 and 7.
 - Tests verify GPS data spans pages 8 and 6 with independent markers.
+- Tests verify segmented RAM access keeps the embedded runtime arrays at 588/240.
 - Tests verify compile-time page-capacity guards remain present.
 - Existing serial route diagnostics display the new limits automatically.
