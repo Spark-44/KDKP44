@@ -107,6 +107,9 @@ static float portion2_run_final_yaw = 0.0f;
 static uint8 portion2_route12_overshoot_armed = 0;
 static uint8 portion2_route12_overshoot_count = 0;
 static float portion2_route12_min_final_dist = 0.0f;
+static uint8 portion2_final_zone_armed = 0;
+static uint8 portion2_final_zone_overshoot_count = 0;
+static float portion2_final_zone_min_dist = 0.0f;
 static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
@@ -194,12 +197,13 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_SNAKE_OVERSHOOT_ARM_DIST 0.80f
 #define PORTION2_SNAKE_OVERSHOOT_RISE_DIST 0.15f
 #define PORTION2_SNAKE_OVERSHOOT_CONFIRM_CYCLES 3U
+#define PORTION2_FINAL_OVERSHOOT_RISE_DIST 0.15f
+#define PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES 3U
 #define PORTION2_FINAL_YAW_TOLERANCE_DEG 5.0f
 #define PORTION2_FINAL_YAW_ALIGN_SPEED 4.0f
 #define PORTION2_FINAL_YAW_ALIGN_STEER_DEG 15.0f
 #define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 4000U
-#define PORTION2_FINAL_YAW_REACQUIRE_DIST 0.25f
-#define PORTION2_FINAL_YAW_ALIGN_MAX_DIST PORTION2_FINAL_YAW_REACQUIRE_DIST
+#define PORTION2_FINAL_YAW_ALIGN_MAX_DIST 0.60f
 #define PORTION2_TERMINAL_POSE_LENGTH_M 1.5f
 #define PORTION2_TERMINAL_APPROACH_SPEED 6.0f
 #define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
@@ -698,6 +702,51 @@ static uint8 portion2_route12_overshoot_detect(int16 raw_point, int16 raw_length
     }
 
     portion2_route12_overshoot_count = 0;
+    return 0;
+}
+
+static void portion2_final_zone_reset(void)
+{
+    portion2_final_zone_armed = 0;
+    portion2_final_zone_overshoot_count = 0;
+    portion2_final_zone_min_dist = 0.0f;
+}
+
+static uint8 portion2_final_zone_overshoot_detect(int16 raw_point, int16 raw_length, float dist_to_final)
+{
+    if(portion2_selected_route == PORTION2_ROUTE_SNAKE)
+    {
+        portion2_final_zone_reset();
+        return 0;
+    }
+    if(raw_length <= 0 || raw_point < raw_length - 1) return 0;
+
+    if(!portion2_final_zone_armed)
+    {
+        if(dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
+        {
+            portion2_final_zone_armed = 1;
+            portion2_final_zone_min_dist = dist_to_final;
+        }
+        return 0;
+    }
+
+    if(dist_to_final < portion2_final_zone_min_dist)
+    {
+        portion2_final_zone_min_dist = dist_to_final;
+        portion2_final_zone_overshoot_count = 0;
+        return 0;
+    }
+    if(dist_to_final >= portion2_final_zone_min_dist + PORTION2_FINAL_OVERSHOOT_RISE_DIST)
+    {
+        if(portion2_final_zone_overshoot_count < PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES)
+        {
+            portion2_final_zone_overshoot_count++;
+        }
+        return (portion2_final_zone_overshoot_count >= PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES) ? 1U : 0U;
+    }
+
+    portion2_final_zone_overshoot_count = 0;
     return 0;
 }
 
@@ -1505,19 +1554,22 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
         float final_stop_distance = portion2_selected_route == PORTION2_ROUTE_SNAKE
                 ? PORTION2_SNAKE_FINAL_STOP_DIST : PORTION2_FINAL_RAW_POINT_STOP_DIST;
-        if(portion2_route12_overshoot_detect(raw_point, raw_length, dist_to_final))
+        if(portion2_route12_overshoot_detect(raw_point, raw_length, dist_to_final)
+                || portion2_final_zone_overshoot_detect(raw_point, raw_length, dist_to_final))
         {
             state->current_point_index = route_length;
-            guandao_debug_stop_reason = 12;
+            guandao_debug_stop_reason = (portion2_selected_route == PORTION2_ROUTE_SNAKE) ? 12 : 13;
             *out_v_l = 0;
             *out_v_r = 0;
             *out_servo = 0;
             last_target_steering = 0.0f;
             last_steer_limit_ms = 0;
             portion2_route12_overshoot_reset();
+            portion2_final_zone_reset();
             return;
         }
-        if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= final_stop_distance)
+        if(raw_length > 0 && raw_point >= raw_length - 1
+                && (dist_to_final <= final_stop_distance || portion2_final_zone_armed))
         {
             uint8 align_status = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
             if(align_status == PORTION2_FINAL_YAW_ALIGN_RUNNING)
@@ -1528,6 +1580,18 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
             }
             if(align_status == PORTION2_FINAL_YAW_ALIGN_REACQUIRE)
             {
+                if(portion2_final_zone_armed)
+                {
+                    state->current_point_index = route_length;
+                    guandao_debug_stop_reason = 13;
+                    *out_v_l = 0;
+                    *out_v_r = 0;
+                    *out_servo = 0;
+                    last_target_steering = 0.0f;
+                    last_steer_limit_ms = 0;
+                    portion2_final_zone_reset();
+                    return;
+                }
                 if(state->current_point_index >= route_length - 1) state->current_point_index = route_length - 2;
             }
             else
@@ -1539,6 +1603,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
                 *out_servo = 0;
                 last_target_steering = 0.0f;
                 last_steer_limit_ms = 0;
+                portion2_final_zone_reset();
                 return;
             }
         }
@@ -2254,6 +2319,7 @@ void portion2_reset(void)
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
     portion2_route12_overshoot_reset();
+    portion2_final_zone_reset();
     daoche_flag = 0;
     portion2_gps_fusion_reset();
     portion2_clear_route();
@@ -2731,6 +2797,7 @@ void portion2_run_stop(void)
     portion2_final_yaw_align_start_ms = 0;
     portion2_run_final_yaw = 0.0f;
     portion2_route12_overshoot_reset();
+    portion2_final_zone_reset();
     daoche_flag = 0;
     portion2_gps_fusion_reset();
     conrtol_mode = GUANDAO;
@@ -2760,6 +2827,7 @@ void portion2_run_task(void)
         case 1:
             portion2_final_yaw_align_start_ms = 0;
             portion2_route12_overshoot_reset();
+            portion2_final_zone_reset();
             portion2_track_reset();
             portion2_clear_route();
             Encoder_Get(&guandao_ecd);
@@ -2865,6 +2933,7 @@ void portion2_run_task(void)
                 portion2_final_yaw_align_start_ms = 0;
                 portion2_run_final_yaw = 0.0f;
                 portion2_route12_overshoot_reset();
+                portion2_final_zone_reset();
                 daoche_flag = 0;
                 conrtol_mode = GUANDAO;
                 portion2_state_flag = 3;
@@ -2881,6 +2950,7 @@ void portion2_run_task(void)
             portion2_final_yaw_align_start_ms = 0;
             portion2_run_final_yaw = 0.0f;
             portion2_route12_overshoot_reset();
+            portion2_final_zone_reset();
             daoche_flag = 0;
             conrtol_mode = GUANDAO;
             break;
