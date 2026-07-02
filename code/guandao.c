@@ -111,7 +111,9 @@ static uint8 portion2_final_zone_armed = 0;
 static uint8 portion2_final_zone_overshoot_count = 0;
 static float portion2_final_zone_min_dist = 0.0f;
 static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
-static state_t portion2_raw_route_buffer[MAX_LENGTH_INDEX];
+static state_t portion2_raw_route_origin = {0};
+static float portion2_raw_route_cos = 1.0f;
+static float portion2_raw_route_sin = 0.0f;
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
 static uint32 portion2_record_k3_start_ms = 0;
@@ -220,6 +222,7 @@ static state_t guandao_route_point(guandao_state *state, int index);
 static float guandao_normalize_angle(float angle);
 static float guandao_segment_yaw(state_t from, state_t to);
 static uint8 portion2_route_required_gps(uint8 route_id);
+static uint16 portion2_route_offset(uint8 route_id);
 static uint16 portion2_route_gps_offset(uint8 route_id);
 static uint8 portion2_route_uses_gps(uint8 route_id);
 
@@ -424,6 +427,34 @@ static portion2_track_sample_t portion2_track_sample(int16 run_index)
                                          guandao_route_point(&portion_2, segment_start + 1));
 }
 
+static state_t portion2_aligned_raw_route_point(int16 raw_index)
+{
+    uint16 length = portion2_route_length[portion2_selected_route];
+    uint16 offset = portion2_route_offset(portion2_selected_route);
+    uint16 source_index;
+    state_t point;
+    float rel_x;
+    float rel_y;
+
+    if(length == 0)
+    {
+        state_t empty = {0};
+        return empty;
+    }
+    if(length > PORTION2_ROUTE_MAX_POINTS) length = PORTION2_ROUTE_MAX_POINTS;
+    if(raw_index < 0) raw_index = 0;
+    if(raw_index >= (int16)length) raw_index = (int16)length - 1;
+    source_index = portion2_run_reverse
+            ? (uint16)(offset + length - 1U - (uint16)raw_index)
+            : (uint16)(offset + (uint16)raw_index);
+    point = portion2_route_storage_get(source_index);
+    rel_x = point.x - portion2_raw_route_origin.x;
+    rel_y = point.y - portion2_raw_route_origin.y;
+    point.x = rel_x * portion2_raw_route_cos + rel_y * portion2_raw_route_sin;
+    point.y = rel_y * portion2_raw_route_cos - rel_x * portion2_raw_route_sin;
+    return point;
+}
+
 static portion2_track_sample_t portion2_raw_track_sample(int16 run_index)
 {
     int16 raw_length = guandao_clamp_length(portion_2.length_index);
@@ -441,8 +472,8 @@ static portion2_track_sample_t portion2_raw_track_sample(int16 run_index)
     segment_start = (raw_point > 0) ? raw_point - 1 : 0;
     if(segment_start >= raw_length - 1) segment_start = raw_length - 2;
 
-    return portion2_track_sample_segment(portion2_raw_route_buffer[segment_start],
-                                         portion2_raw_route_buffer[segment_start + 1]);
+    return portion2_track_sample_segment(portion2_aligned_raw_route_point(segment_start),
+                                         portion2_aligned_raw_route_point(segment_start + 1));
 }
 
 static void portion2_track_reset(void)
@@ -877,14 +908,27 @@ static float portion2_align_route_to_current_yaw(float run_start_theta)
     return yaw_delta;
 }
 
-static void portion2_capture_raw_route(void)
+static void portion2_capture_raw_transform(float yaw_delta)
 {
-    int16 length = guandao_clamp_length(portion_2.length_index);
+    uint16 length = portion2_route_length[portion2_selected_route];
+    uint16 offset = portion2_route_offset(portion2_selected_route);
+    uint16 origin_index;
+    float yaw_rad = yaw_delta / 180.0f * M_PI;
 
-    for(int16 i = 0; i < length; i++)
+    if(length == 0)
     {
-        portion2_raw_route_buffer[i] = portion_2.recode_map[i];
+        portion2_raw_route_origin.x = 0.0f;
+        portion2_raw_route_origin.y = 0.0f;
+        portion2_raw_route_origin.theta = 0.0f;
+        portion2_raw_route_cos = 1.0f;
+        portion2_raw_route_sin = 0.0f;
+        return;
     }
+    if(length > PORTION2_ROUTE_MAX_POINTS) length = PORTION2_ROUTE_MAX_POINTS;
+    origin_index = portion2_run_reverse ? (uint16)(offset + length - 1U) : offset;
+    portion2_raw_route_origin = portion2_route_storage_get(origin_index);
+    portion2_raw_route_cos = cosf(yaw_rad);
+    portion2_raw_route_sin = sinf(yaw_rad);
 }
 
 static void portion2_smooth_reference_route(void)
@@ -2866,7 +2910,7 @@ void portion2_run_task(void)
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
             portion2_translate_route_to_origin();
             yaw_delta = portion2_align_route_to_current_yaw(run_start_theta);
-            portion2_capture_raw_route();
+            portion2_capture_raw_transform(yaw_delta);
             gps_prepare_ready = 0;
             if(portion2_route_uses_gps(portion2_selected_route))
             {
