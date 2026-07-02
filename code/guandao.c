@@ -111,6 +111,7 @@ static uint8 portion2_final_zone_armed = 0;
 static uint8 portion2_final_zone_overshoot_count = 0;
 static float portion2_final_zone_min_dist = 0.0f;
 static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
+static state_t portion2_raw_route_buffer[MAX_LENGTH_INDEX];
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
 static uint32 portion2_record_k3_start_ms = 0;
@@ -367,13 +368,9 @@ static uint8 portion2_run_gps_reached_count(void)
     return count;
 }
 
-static portion2_track_sample_t portion2_track_sample(int16 run_index)
+static portion2_track_sample_t portion2_track_sample_segment(state_t segment_a, state_t segment_b)
 {
     portion2_track_sample_t sample = {0.0f, 0.0f, 0.0f};
-    int16 route_len = guandao_route_length(&portion_2);
-    int16 segment_start;
-    state_t segment_a;
-    state_t segment_b;
     float segment_dx;
     float segment_dy;
     float segment_length_sq;
@@ -386,14 +383,6 @@ static portion2_track_sample_t portion2_track_sample(int16 run_index)
     float cross;
     float track_heading;
 
-    if(route_len < 2) return sample;
-    if(run_index < 0) run_index = 0;
-    if(run_index >= route_len) run_index = route_len - 1;
-    segment_start = (run_index > 0) ? run_index - 1 : 0;
-    if(segment_start >= route_len - 1) segment_start = route_len - 2;
-
-    segment_a = guandao_route_point(&portion_2, segment_start);
-    segment_b = guandao_route_point(&portion_2, segment_start + 1);
     segment_dx = segment_b.x - segment_a.x;
     segment_dy = segment_b.y - segment_a.y;
     segment_length_sq = segment_dx * segment_dx + segment_dy * segment_dy;
@@ -414,6 +403,46 @@ static portion2_track_sample_t portion2_track_sample(int16 run_index)
     track_heading = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
     sample.heading_error = guandao_normalize_angle(guandao_segment_yaw(segment_a, segment_b) - track_heading);
     return sample;
+}
+
+static portion2_track_sample_t portion2_track_sample(int16 run_index)
+{
+    int16 route_len = guandao_route_length(&portion_2);
+    int16 segment_start;
+
+    if(route_len < 2)
+    {
+        portion2_track_sample_t empty = {0.0f, 0.0f, 0.0f};
+        return empty;
+    }
+    if(run_index < 0) run_index = 0;
+    if(run_index >= route_len) run_index = route_len - 1;
+    segment_start = (run_index > 0) ? run_index - 1 : 0;
+    if(segment_start >= route_len - 1) segment_start = route_len - 2;
+
+    return portion2_track_sample_segment(guandao_route_point(&portion_2, segment_start),
+                                         guandao_route_point(&portion_2, segment_start + 1));
+}
+
+static portion2_track_sample_t portion2_raw_track_sample(int16 run_index)
+{
+    int16 raw_length = guandao_clamp_length(portion_2.length_index);
+    int16 raw_point;
+    int16 segment_start;
+
+    if(raw_length < 2)
+    {
+        portion2_track_sample_t empty = {0.0f, 0.0f, 0.0f};
+        return empty;
+    }
+    raw_point = portion2_raw_point_from_plan_index(run_index);
+    if(raw_point < 0) raw_point = 0;
+    if(raw_point >= raw_length) raw_point = raw_length - 1;
+    segment_start = (raw_point > 0) ? raw_point - 1 : 0;
+    if(segment_start >= raw_length - 1) segment_start = raw_length - 2;
+
+    return portion2_track_sample_segment(portion2_raw_route_buffer[segment_start],
+                                         portion2_raw_route_buffer[segment_start + 1]);
 }
 
 static void portion2_track_reset(void)
@@ -451,7 +480,8 @@ static void portion2_serial_log_run_point_event(uint8 force)
     char line[320];
     int pos = 0;
     state_t final_point;
-    portion2_track_sample_t sample;
+    portion2_track_sample_t plan_sample;
+    portion2_track_sample_t raw_sample;
     const char *side;
     const char *status;
     int16 raw_point;
@@ -496,20 +526,21 @@ static void portion2_serial_log_run_point_event(uint8 force)
 
     if(!force && raw_point == portion2_run_last_report_point) return;
     portion2_run_last_report_point = raw_point;
-    sample = portion2_track_sample(run_index);
-    if(portion2_track_max_raw < 0 || sample.abs_error > portion2_track_max_off)
+    plan_sample = portion2_track_sample(run_index);
+    raw_sample = portion2_raw_track_sample(run_index);
+    if(portion2_track_max_raw < 0 || raw_sample.abs_error > portion2_track_max_off)
     {
-        portion2_track_max_off = sample.abs_error;
+        portion2_track_max_off = raw_sample.abs_error;
         portion2_track_max_raw = raw_point;
     }
-    if(portion2_track_first_bad_raw < 0 && sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M)
+    if(portion2_track_first_bad_raw < 0 && raw_sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M)
     {
         portion2_track_first_bad_raw = raw_point;
     }
-    if(sample.signed_error > PORTION2_TRACK_CENTER_EPSILON_M) side = "LEFT";
-    else if(sample.signed_error < -PORTION2_TRACK_CENTER_EPSILON_M) side = "RIGHT";
+    if(raw_sample.signed_error > PORTION2_TRACK_CENTER_EPSILON_M) side = "LEFT";
+    else if(raw_sample.signed_error < -PORTION2_TRACK_CENTER_EPSILON_M) side = "RIGHT";
     else side = "CENTER";
-    status = (sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M) ? "BAD" : "OK";
+    status = (raw_sample.abs_error >= PORTION2_TRACK_BAD_THRESHOLD_M) ? "BAD" : "OK";
     raw_number = portion2_human_point_number(raw_point, raw_length);
     plan_number = portion2_human_point_number(run_index, route_len);
     final_point = guandao_route_point(&portion_2, route_len - 1);
@@ -522,9 +553,13 @@ static void portion2_serial_log_run_point_event(uint8 force)
                    (int)plan_number,
                    (int)route_len,
                    side);
-    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), sample.abs_error);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), raw_sample.abs_error);
+    pos += sprintf(&line[pos], " off_raw=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), raw_sample.abs_error);
+    pos += sprintf(&line[pos], " off_plan=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), plan_sample.abs_error);
     pos += sprintf(&line[pos], " head_err=");
-    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), sample.heading_error);
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), raw_sample.heading_error);
     pos += sprintf(&line[pos], " steer=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_servo);
     pos += sprintf(&line[pos], " final=");
@@ -840,6 +875,16 @@ static float portion2_align_route_to_current_yaw(float run_start_theta)
         portion_2.recode_gpsmap[i].theta = guandao_normalize_angle(portion_2.recode_gpsmap[i].theta + yaw_delta);
     }
     return yaw_delta;
+}
+
+static void portion2_capture_raw_route(void)
+{
+    int16 length = guandao_clamp_length(portion_2.length_index);
+
+    for(int16 i = 0; i < length; i++)
+    {
+        portion2_raw_route_buffer[i] = portion_2.recode_map[i];
+    }
 }
 
 static void portion2_smooth_reference_route(void)
@@ -2069,61 +2114,6 @@ static void portion2_record_point(void)
     }
 }
 
-static void portion2_shape_terminal_pose(float target_yaw)
-{
-    int16 length = guandao_clamp_length(portion_2.length_index);
-    int16 anchor;
-    float covered = 0.0f;
-    float tangent_length;
-    float anchor_yaw;
-    state_t p0;
-    state_t p1;
-    state_t p2;
-    state_t p3;
-
-    if(length < 4) return;
-    anchor = length - 2;
-    for(int16 i = length - 1; i > 0; i--)
-    {
-        covered += get_distance(portion_2.recode_map[i - 1], portion_2.recode_map[i]);
-        anchor = i - 1;
-        if(covered >= PORTION2_TERMINAL_POSE_LENGTH_M) break;
-    }
-    if(length - anchor < 3) return;
-
-    p0 = portion_2.recode_map[anchor];
-    p3 = portion_2.recode_map[length - 1];
-    anchor_yaw = guandao_segment_yaw(p0, portion_2.recode_map[anchor + 1]);
-    tangent_length = get_distance(p0, p3) * 0.45f;
-    if(tangent_length < 0.20f) tangent_length = 0.20f;
-
-    p1 = p0;
-    p1.x += sinf(anchor_yaw / 180.0f * M_PI) * tangent_length;
-    p1.y += cosf(anchor_yaw / 180.0f * M_PI) * tangent_length;
-    p2 = p3;
-    p2.x -= sinf(target_yaw / 180.0f * M_PI) * tangent_length;
-    p2.y -= cosf(target_yaw / 180.0f * M_PI) * tangent_length;
-
-    for(int16 i = anchor + 1; i < length; i++)
-    {
-        float t = (float)(i - anchor) / (float)(length - 1 - anchor);
-        float one_minus_t = 1.0f - t;
-        portion_2.recode_map[i].x = one_minus_t * one_minus_t * one_minus_t * p0.x
-                + 3.0f * one_minus_t * one_minus_t * t * p1.x
-                + 3.0f * one_minus_t * t * t * p2.x
-                + t * t * t * p3.x;
-        portion_2.recode_map[i].y = one_minus_t * one_minus_t * one_minus_t * p0.y
-                + 3.0f * one_minus_t * one_minus_t * t * p1.y
-                + 3.0f * one_minus_t * t * t * p2.y
-                + t * t * t * p3.y;
-    }
-    for(int16 i = anchor; i < length - 1; i++)
-    {
-        portion_2.recode_map[i].theta = guandao_segment_yaw(portion_2.recode_map[i], portion_2.recode_map[i + 1]);
-    }
-    portion_2.recode_map[length - 1].theta = target_yaw;
-}
-
 static void portion2_record_capture_final_pose(void)
 {
     char line[120];
@@ -2815,7 +2805,6 @@ void portion2_run_task(void)
     float run_start_theta;
     float yaw_delta;
     float recorded_terminal_yaw;
-    float terminal_path_yaw;
 
     switch(portion2_state_flag)
     {
@@ -2877,15 +2866,7 @@ void portion2_run_task(void)
             run_start_theta = portion2_run_drive_reverse ? Yaw_1 + 180.0f : Yaw_1;
             portion2_translate_route_to_origin();
             yaw_delta = portion2_align_route_to_current_yaw(run_start_theta);
-            portion2_smooth_reference_route();
-            recorded_terminal_yaw = portion2_run_reverse
-                    ? portion2_route_start_yaw[portion2_selected_route]
-                    : portion2_route_final_yaw[portion2_selected_route];
-            portion2_run_final_yaw = guandao_normalize_angle(recorded_terminal_yaw + yaw_delta);
-            terminal_path_yaw = (portion2_run_reverse || portion2_run_drive_reverse)
-                    ? guandao_normalize_angle(portion2_run_final_yaw + 180.0f)
-                    : portion2_run_final_yaw;
-            portion2_shape_terminal_pose(terminal_path_yaw);
+            portion2_capture_raw_route();
             gps_prepare_ready = 0;
             if(portion2_route_uses_gps(portion2_selected_route))
             {
@@ -2895,6 +2876,11 @@ void portion2_run_task(void)
             {
                 portion2_gps_fusion_reset();
             }
+            portion2_smooth_reference_route();
+            recorded_terminal_yaw = portion2_run_reverse
+                    ? portion2_route_start_yaw[portion2_selected_route]
+                    : portion2_route_final_yaw[portion2_selected_route];
+            portion2_run_final_yaw = guandao_normalize_angle(recorded_terminal_yaw + yaw_delta);
             guandao_build_smooth_plan(&portion_2);
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
             {
