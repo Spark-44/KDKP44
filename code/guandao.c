@@ -107,9 +107,6 @@ static float portion2_run_final_yaw = 0.0f;
 static uint8 portion2_route12_overshoot_armed = 0;
 static uint8 portion2_route12_overshoot_count = 0;
 static float portion2_route12_min_final_dist = 0.0f;
-static uint8 portion2_route11_overshoot_armed = 0;
-static uint8 portion2_route11_overshoot_count = 0;
-static float portion2_route11_min_final_dist = 0.0f;
 static state_t portion2_reference_smooth_buffer[MAX_LENGTH_INDEX];
 static uint32 portion2_record_k1_start_ms = 0;
 static uint32 portion2_record_k2_start_ms = 0;
@@ -193,10 +190,6 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION3_PURSUIT_THRESHOLD     0.08f
 #define PORTION3_FINAL_STOP_DIST       0.1f
 #define PORTION2_FINAL_RAW_POINT_STOP_DIST 0.20f
-#define PORTION2_ROUTE11_FINAL_STOP_DIST 0.20f
-#define PORTION2_ROUTE11_OVERSHOOT_ARM_DIST 0.40f
-#define PORTION2_ROUTE11_OVERSHOOT_RISE_DIST 0.12f
-#define PORTION2_ROUTE11_OVERSHOOT_CONFIRM_CYCLES 3U
 #define PORTION2_SNAKE_FINAL_STOP_DIST 0.40f
 #define PORTION2_SNAKE_OVERSHOOT_ARM_DIST 0.80f
 #define PORTION2_SNAKE_OVERSHOOT_RISE_DIST 0.15f
@@ -705,51 +698,6 @@ static uint8 portion2_route12_overshoot_detect(int16 raw_point, int16 raw_length
     }
 
     portion2_route12_overshoot_count = 0;
-    return 0;
-}
-
-static void portion2_route11_overshoot_reset(void)
-{
-    portion2_route11_overshoot_armed = 0;
-    portion2_route11_overshoot_count = 0;
-    portion2_route11_min_final_dist = 0.0f;
-}
-
-static uint8 portion2_route11_overshoot_detect(int16 raw_point, int16 raw_length, float dist_to_final)
-{
-    if(portion2_selected_route != PORTION2_ROUTE_STRAIGHT || !portion2_run_drive_reverse)
-    {
-        portion2_route11_overshoot_reset();
-        return 0;
-    }
-    if(raw_length <= 0 || raw_point < raw_length - 1) return 0;
-
-    if(!portion2_route11_overshoot_armed)
-    {
-        if(dist_to_final <= PORTION2_ROUTE11_OVERSHOOT_ARM_DIST)
-        {
-            portion2_route11_overshoot_armed = 1;
-            portion2_route11_min_final_dist = dist_to_final;
-        }
-        return 0;
-    }
-
-    if(dist_to_final < portion2_route11_min_final_dist)
-    {
-        portion2_route11_min_final_dist = dist_to_final;
-        portion2_route11_overshoot_count = 0;
-        return 0;
-    }
-    if(dist_to_final >= portion2_route11_min_final_dist + PORTION2_ROUTE11_OVERSHOOT_RISE_DIST)
-    {
-        if(portion2_route11_overshoot_count < PORTION2_ROUTE11_OVERSHOOT_CONFIRM_CYCLES)
-        {
-            portion2_route11_overshoot_count++;
-        }
-        return (portion2_route11_overshoot_count >= PORTION2_ROUTE11_OVERSHOOT_CONFIRM_CYCLES) ? 1U : 0U;
-    }
-
-    portion2_route11_overshoot_count = 0;
     return 0;
 }
 
@@ -1557,18 +1505,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         int16 raw_point = portion2_raw_point_from_plan_index(guandao_clamp_length(state->current_point_index));
         float final_stop_distance = portion2_selected_route == PORTION2_ROUTE_SNAKE
                 ? PORTION2_SNAKE_FINAL_STOP_DIST : PORTION2_FINAL_RAW_POINT_STOP_DIST;
-        if(portion2_route11_overshoot_detect(raw_point, raw_length, dist_to_final))
-        {
-            state->current_point_index = route_length;
-            guandao_debug_stop_reason = 14;
-            *out_v_l = 0;
-            *out_v_r = 0;
-            *out_servo = 0;
-            last_target_steering = 0.0f;
-            last_steer_limit_ms = 0;
-            portion2_route11_overshoot_reset();
-            return;
-        }
         if(portion2_route12_overshoot_detect(raw_point, raw_length, dist_to_final))
         {
             state->current_point_index = route_length;
@@ -1583,19 +1519,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         }
         if(raw_length > 0 && raw_point >= raw_length - 1 && dist_to_final <= final_stop_distance)
         {
-            if(route11_reverse && dist_to_final <= PORTION2_ROUTE11_FINAL_STOP_DIST)
-            {
-                state->current_point_index = route_length;
-                guandao_debug_stop_reason = 13;
-                *out_v_l = 0;
-                *out_v_r = 0;
-                *out_servo = 0;
-                last_target_steering = 0.0f;
-                last_steer_limit_ms = 0;
-                portion2_final_yaw_align_start_ms = 0;
-                portion2_route11_overshoot_reset();
-                return;
-            }
             uint8 align_status = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
             if(align_status == PORTION2_FINAL_YAW_ALIGN_RUNNING)
             {
@@ -2331,7 +2254,6 @@ void portion2_reset(void)
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
     portion2_route12_overshoot_reset();
-    portion2_route11_overshoot_reset();
     daoche_flag = 0;
     portion2_gps_fusion_reset();
     portion2_clear_route();
@@ -2809,7 +2731,6 @@ void portion2_run_stop(void)
     portion2_final_yaw_align_start_ms = 0;
     portion2_run_final_yaw = 0.0f;
     portion2_route12_overshoot_reset();
-    portion2_route11_overshoot_reset();
     daoche_flag = 0;
     portion2_gps_fusion_reset();
     conrtol_mode = GUANDAO;
@@ -2839,7 +2760,6 @@ void portion2_run_task(void)
         case 1:
             portion2_final_yaw_align_start_ms = 0;
             portion2_route12_overshoot_reset();
-            portion2_route11_overshoot_reset();
             portion2_track_reset();
             portion2_clear_route();
             Encoder_Get(&guandao_ecd);
@@ -2945,7 +2865,6 @@ void portion2_run_task(void)
                 portion2_final_yaw_align_start_ms = 0;
                 portion2_run_final_yaw = 0.0f;
                 portion2_route12_overshoot_reset();
-                portion2_route11_overshoot_reset();
                 daoche_flag = 0;
                 conrtol_mode = GUANDAO;
                 portion2_state_flag = 3;
@@ -2962,7 +2881,6 @@ void portion2_run_task(void)
             portion2_final_yaw_align_start_ms = 0;
             portion2_run_final_yaw = 0.0f;
             portion2_route12_overshoot_reset();
-            portion2_route11_overshoot_reset();
             daoche_flag = 0;
             conrtol_mode = GUANDAO;
             break;
