@@ -9,6 +9,7 @@
 #define PORTION2_GPS_STARTUP_WAIT             0U
 #define PORTION2_GPS_STARTUP_READY            1U
 #define PORTION2_GPS_STARTUP_FALLBACK         2U
+#define PORTION2_GPS_STARTUP_REJECT           3U
 
 typedef struct
 {

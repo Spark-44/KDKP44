@@ -208,6 +208,7 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_FINAL_YAW_ALIGN_TIMEOUT_MS 4000U
 #define PORTION2_FINAL_YAW_ALIGN_MAX_DIST 0.60f
 #define PORTION2_TERMINAL_POSE_LENGTH_M 1.5f
+#define PORTION2_RAW_TERMINAL_LENGTH_M 2.0f
 #define PORTION2_TERMINAL_APPROACH_SPEED 6.0f
 #define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
 #define PORTION2_TRACK_CENTER_EPSILON_M 0.01f
@@ -931,9 +932,28 @@ static void portion2_capture_raw_transform(float yaw_delta)
     portion2_raw_route_sin = sinf(yaw_rad);
 }
 
+static int16 portion2_terminal_raw_start_index(void)
+{
+    int16 length = guandao_clamp_length(portion_2.length_index);
+    int16 start = length - 1;
+    float covered = 0.0f;
+
+    if(length <= 1) return 0;
+    for(int16 i = length - 1; i > 0; i--)
+    {
+        float dx = portion_2.recode_map[i].x - portion_2.recode_map[i - 1].x;
+        float dy = portion_2.recode_map[i].y - portion_2.recode_map[i - 1].y;
+        covered += hypotf(dx, dy);
+        start = i - 1;
+        if(covered >= PORTION2_RAW_TERMINAL_LENGTH_M) break;
+    }
+    return start;
+}
+
 static void portion2_smooth_reference_route(void)
 {
     int16 length = guandao_clamp_length(portion_2.length_index);
+    int16 terminal_start = portion2_terminal_raw_start_index();
 
     if(length < 4) return;
 
@@ -949,6 +969,11 @@ static void portion2_smooth_reference_route(void)
             state_t next = portion_2.recode_map[i + 1];
             float middle_weight = 1.0f - 2.0f * PORTION2_REFERENCE_SMOOTH_WEIGHT;
 
+            if(i >= terminal_start)
+            {
+                portion2_reference_smooth_buffer[i] = cur;
+                continue;
+            }
             portion2_reference_smooth_buffer[i] = cur;
             portion2_reference_smooth_buffer[i].x =
                     prev.x * PORTION2_REFERENCE_SMOOTH_WEIGHT
@@ -1255,6 +1280,7 @@ void recode_waypoint(guandao_state * state)
 void guandao_build_smooth_plan(guandao_state * state)
 {
     int16 source_length = guandao_clamp_length(state->length_index);
+    int16 terminal_start = (state == &portion_2) ? portion2_terminal_raw_start_index() : source_length;
     state->planned_length = 0;
     state->plan_ready = 0;
 
@@ -1282,7 +1308,9 @@ void guandao_build_smooth_plan(guandao_state * state)
         state_t p3 = state->recode_map[(i + 2 < source_length) ? i + 2 : i + 1];
         float turn_in = fabsf(guandao_normalize_angle(guandao_segment_yaw(p0, p1) - guandao_segment_yaw(p1, p2)));
         float turn_out = fabsf(guandao_normalize_angle(guandao_segment_yaw(p1, p2) - guandao_segment_yaw(p2, p3)));
-        uint8 keep_corner_linear = (state != &portion_2 && (turn_in >= GUANDAO_SHARP_TURN_ANGLE || turn_out >= GUANDAO_SHARP_TURN_ANGLE));
+        uint8 keep_terminal_linear = (state == &portion_2 && i >= terminal_start) ? 1U : 0U;
+        uint8 keep_corner_linear = keep_terminal_linear ||
+                (state != &portion_2 && (turn_in >= GUANDAO_SHARP_TURN_ANGLE || turn_out >= GUANDAO_SHARP_TURN_ANGLE));
 
         for(int j = 0; j < samples && state->planned_length < MAX_LENGTH_INDEX - 1; j++)
         {
@@ -2915,6 +2943,22 @@ void portion2_run_task(void)
             if(portion2_route_uses_gps(portion2_selected_route))
             {
                 gps_prepare_ready = portion2_gps_fusion_prepare(&portion_2);
+                if(!gps_prepare_ready)
+                {
+                    portion2_run_reject_reason = 5;
+                    portion2_state_flag = 0;
+                    portion2_run_reverse = 0;
+                    portion2_run_drive_reverse = 0;
+                    daoche_flag = 0;
+                    conrtol_mode = GUANDAO;
+                    out_v_l = 0;
+                    out_v_r = 0;
+                    out_servo = 0;
+                    portion2_gps_fusion_reset();
+                    Buzzer_check(80); Buzzer_check(80);
+                    uart_write_string(DEBUG_UART_INDEX, "[P2-RUN-REJECT] reason=GPS_FIT\r\n");
+                    break;
+                }
             }
             else
             {
@@ -2943,9 +2987,22 @@ void portion2_run_task(void)
             out_v_r = 0;
             out_servo = 0;
             gps_startup_result = portion2_gps_fusion_startup_update(&portion_2);
-            if(gps_startup_result != PORTION2_GPS_STARTUP_WAIT)
+            if(gps_startup_result == PORTION2_GPS_STARTUP_READY ||
+               gps_startup_result == PORTION2_GPS_STARTUP_FALLBACK)
             {
                 portion2_state_flag = 2;
+            }
+            else if(gps_startup_result == PORTION2_GPS_STARTUP_REJECT)
+            {
+                portion2_run_reject_reason = 6;
+                portion2_state_flag = 0;
+                portion2_run_reverse = 0;
+                portion2_run_drive_reverse = 0;
+                daoche_flag = 0;
+                conrtol_mode = GUANDAO;
+                portion2_gps_fusion_reset();
+                Buzzer_check(80); Buzzer_check(80);
+                uart_write_string(DEBUG_UART_INDEX, "[P2-RUN-REJECT] reason=GPS_START_SHIFT\r\n");
             }
             break;
         case 2:
