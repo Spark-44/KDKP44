@@ -12,10 +12,6 @@
 #define SUBJECT_2_FIXED_TURN_ANGLE_DEG     (90.0f)
 #define SUBJECT_2_FIXED_TURN_TIMEOUT_MS     (60000U)
 #define SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG   (360.0f)
-#define SUBJECT_2_FIXED_CIRCLE_SLOWDOWN_DEG (30.0f)
-#define SUBJECT_2_FIXED_CIRCLE_MIN_SPEED_MPS (0.30f)
-#define SUBJECT_2_FIXED_CIRCLE_STOP_LEAD_DEG (1.0f)
-#define SUBJECT_2_FIXED_CIRCLE_SETTLE_MS    (300U)
 #define SUBJECT_2_FIXED_STEER_DEG          (25.0f)
 #define SUBJECT_2_ENCODER_YAW_SPEED_MPS    (1.0f)
 #define SUBJECT_2_ENCODER_YAW_MIN_SPEED_MPS (1.0f)
@@ -70,8 +66,6 @@ typedef struct
     float progress_distance_mark;
     uint32 last_control_ms;
     uint32 last_progress_ms;
-    uint8 circle_settling;
-    uint32 circle_settle_start_ms;
 } subject_2_fixed_action_state_t;
 
 static const subject_2_fixed_action_t subject_2_fixed_actions[] =
@@ -111,8 +105,6 @@ static subject_2_fixed_action_state_t subject_2_fixed_action_state =
     0.0f,
     0.0f,
     0.0f,
-    0,
-    0,
     0,
     0
 };
@@ -329,11 +321,6 @@ static uint8 subject_2_fixed_is_turn_action(voice_drive_action_mode_t mode)
     return (mode == VOICE_DRIVE_ACTION_TURN_LEFT || mode == VOICE_DRIVE_ACTION_TURN_RIGHT);
 }
 
-static uint8 subject_2_fixed_is_circle_action(voice_drive_action_mode_t mode)
-{
-    return (mode == VOICE_DRIVE_ACTION_CCW_CIRCLE || mode == VOICE_DRIVE_ACTION_CW_CIRCLE);
-}
-
 static float subject_2_fixed_turn_yaw_delta(void)
 {
     return subject_2_fixed_yaw_step(Yaw_1, subject_2_fixed_action_state.yaw_target);
@@ -370,7 +357,6 @@ static void subject_2_fixed_log_state(const char *tag, uint8 force)
 static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32 elapsed_ms, float distance_m, float yaw_delta, float yaw_target, float yaw_current, subject_2_fixed_action_output_t *output)
 {
     const subject_2_fixed_action_t *action;
-    float yaw_stop_value;
 
     (void)elapsed_ms;
     (void)yaw_target;
@@ -394,19 +380,6 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
 
     output->speed_mps = action->speed_mps;
     output->steer_deg = action->steer_deg;
-
-    if(subject_2_fixed_is_circle_action(mode))
-    {
-        float remaining_yaw = action->stop_value - subject_2_fixed_abs_float(yaw_delta);
-        if(remaining_yaw < SUBJECT_2_FIXED_CIRCLE_SLOWDOWN_DEG)
-        {
-            float speed_ratio;
-            if(remaining_yaw < 0.0f) remaining_yaw = 0.0f;
-            speed_ratio = remaining_yaw / SUBJECT_2_FIXED_CIRCLE_SLOWDOWN_DEG;
-            output->speed_mps = SUBJECT_2_FIXED_CIRCLE_MIN_SPEED_MPS
-                    + (SUBJECT_2_FIXED_TURN_SPEED_MPS - SUBJECT_2_FIXED_CIRCLE_MIN_SPEED_MPS) * speed_ratio;
-        }
-    }
 
     if(subject_2_fixed_is_turn_action(mode))
     {
@@ -436,19 +409,13 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
         }
     }
 
-    yaw_stop_value = action->stop_value;
-    if(subject_2_fixed_is_circle_action(mode))
-    {
-        yaw_stop_value -= SUBJECT_2_FIXED_CIRCLE_STOP_LEAD_DEG;
-    }
-
     if(action->stop_type == SUBJECT_2_FIXED_STOP_DISTANCE && distance_m >= action->stop_value)
     {
         output->finished = 1;
     }
     else if(action->stop_type == SUBJECT_2_FIXED_STOP_YAW
             && (!subject_2_fixed_is_turn_action(mode) || subject_2_fixed_action_state.turn_phase == SUBJECT_2_FIXED_TURN_PHASE_TURN)
-            && subject_2_fixed_abs_float(yaw_delta) >= yaw_stop_value)
+            && subject_2_fixed_abs_float(yaw_delta) >= action->stop_value)
     {
         output->finished = 1;
     }
@@ -479,8 +446,6 @@ void voice_drive_action_stop(void)
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
     subject_2_fixed_action_state.last_control_ms = 0;
     subject_2_fixed_action_state.last_progress_ms = 0;
-    subject_2_fixed_action_state.circle_settling = 0;
-    subject_2_fixed_action_state.circle_settle_start_ms = 0;
     out_v_l = 0.0f;
     out_v_r = 0.0f;
     out_servo = 0.0f;
@@ -508,33 +473,11 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
     subject_2_fixed_action_state.last_control_ms = subject_2_fixed_action_state.start_ms;
     subject_2_fixed_action_state.last_progress_ms = subject_2_fixed_action_state.start_ms;
-    subject_2_fixed_action_state.circle_settling = 0;
-    subject_2_fixed_action_state.circle_settle_start_ms = 0;
     conrtol_mode = GUANDAO;
     if(subject_2_fixed_is_encoder_yaw_action(mode))
     {
         subject_2_encoder_yaw_log("START", "NONE", 1U);
     }
-}
-
-static void subject_2_fixed_finish_action(uint32 now_ms)
-{
-    uint8 circle_action = subject_2_fixed_is_circle_action(subject_2_fixed_action_state.mode);
-
-    out_v_l = 0.0f;
-    out_v_r = 0.0f;
-    out_servo = 0.0f;
-    rear_motor_stop();
-    subject_2_fixed_log_state("STOP", 1U);
-
-    if(circle_action)
-    {
-        subject_2_fixed_action_state.circle_settling = 1U;
-        subject_2_fixed_action_state.circle_settle_start_ms = now_ms;
-        subject_2_fixed_action_state.yaw_last = Yaw_1;
-        return;
-    }
-    voice_drive_action_stop();
 }
 
 void voice_drive_action_task(void)
@@ -554,23 +497,6 @@ void voice_drive_action_task(void)
     }
 
     now_ms = system_getval_ms();
-    if(subject_2_fixed_action_state.circle_settling)
-    {
-        yaw_step = subject_2_fixed_yaw_step(Yaw_1, subject_2_fixed_action_state.yaw_last);
-        subject_2_fixed_action_state.yaw_last = Yaw_1;
-        subject_2_fixed_action_state.yaw_delta += yaw_step;
-        out_v_l = 0.0f;
-        out_v_r = 0.0f;
-        out_servo = 0.0f;
-        rear_motor_stop();
-        if((uint32)(now_ms - subject_2_fixed_action_state.circle_settle_start_ms)
-                >= SUBJECT_2_FIXED_CIRCLE_SETTLE_MS)
-        {
-            subject_2_fixed_log_state("SETTLE", 1U);
-            voice_drive_action_stop();
-        }
-        return;
-    }
     if(subject_2_fixed_is_encoder_yaw_action(subject_2_fixed_action_state.mode))
     {
         subject_2_encoder_yaw_task(now_ms);
@@ -595,12 +521,6 @@ void voice_drive_action_task(void)
     steer_deg = fixed_action_output.steer_deg;
     subject_2_fixed_log_state("RUN", 0U);
 
-    if(fixed_action_output.finished)
-    {
-        subject_2_fixed_finish_action(now_ms);
-        return;
-    }
-
     if(!subject_2_fixed_is_encoder_yaw_action(subject_2_fixed_action_state.mode))
     {
         subject_2_fixed_action_state.distance_m += subject_2_fixed_abs_float(speed_mps) * dt_s;
@@ -611,7 +531,8 @@ void voice_drive_action_task(void)
     subject_2_fixed_action_update(subject_2_fixed_action_state.mode, elapsed_ms, subject_2_fixed_action_state.distance_m, subject_2_fixed_action_state.yaw_delta, subject_2_fixed_action_state.yaw_target, Yaw_1, &fixed_action_output);
     if(fixed_action_output.finished)
     {
-        subject_2_fixed_finish_action(now_ms);
+        subject_2_fixed_log_state("STOP", 1U);
+        voice_drive_action_stop();
     }
 }
 
