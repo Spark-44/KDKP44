@@ -32,7 +32,14 @@ static void Guandao_Rear_Motor_Update(void)
     }
     else if(conrtol_mode == DAOCHE)
     {
-        target_mps = daoche_speed * GUANDAO_SPEED_TO_MPS;
+        if(portion2_run_drive_reverse && portion2_selected_route == PORTION2_ROUTE_STRAIGHT)
+        {
+            target_mps = -(out_v_l + out_v_r) * 0.5f * GUANDAO_SPEED_TO_MPS;
+        }
+        else
+        {
+            target_mps = daoche_speed * GUANDAO_SPEED_TO_MPS;
+        }
     }
     else
     {

@@ -156,6 +156,12 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_STEERING_GAIN         0.90f
 #define PORTION2_STEERING_CMD_LIMIT    12.0f
 #define PORTION2_SHARP_STEERING_CMD_LIMIT 20.0f
+#define PORTION2_ROUTE11_STEERING_GAIN 0.70f
+#define PORTION2_ROUTE11_STEERING_CMD_LIMIT 18.0f
+#define PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT 25.0f
+#define PORTION2_ROUTE11_MIN_PREVIEW_STEPS 20
+#define PORTION2_ROUTE11_CURVE_PREVIEW_STEPS 32
+#define PORTION2_ROUTE11_SPEED         6.0f
 #define PORTION2_SNAKE_STEERING_CMD_LIMIT 20.0f
 #define PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT 30.0f
 #define PORTION2_SHARP_TURN_TRIGGER_DEG 4.0f
@@ -1201,6 +1207,9 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     float arrive_threshold = persuit_threshold;
     float upcoming_turn = 0.0f;
     float reference_turn = 0.0f;
+    uint8 route11_reverse = (state == &portion_2
+            && portion2_selected_route == PORTION2_ROUTE_STRAIGHT
+            && portion2_run_drive_reverse) ? 1U : 0U;
 
     guandao_debug_stop_reason = 0;
     if(route_length == 0 || state->current_point_index == route_length)
@@ -1262,12 +1271,21 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
 
     if(state == &portion_2)
     {
-        steering_gain = PORTION2_STEERING_GAIN;
-        steering_limit = portion2_selected_route == PORTION2_ROUTE_SNAKE
-                ? PORTION2_SNAKE_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT;
+        steering_gain = route11_reverse ? PORTION2_ROUTE11_STEERING_GAIN : PORTION2_STEERING_GAIN;
+        steering_limit = route11_reverse ? PORTION2_ROUTE11_STEERING_CMD_LIMIT
+                : (portion2_selected_route == PORTION2_ROUTE_SNAKE
+                        ? PORTION2_SNAKE_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT);
         steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
-        if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
-        if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+        if(route11_reverse)
+        {
+            if(steer_preview_steps < PORTION2_ROUTE11_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_ROUTE11_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_ROUTE11_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_ROUTE11_CURVE_PREVIEW_STEPS;
+        }
+        else
+        {
+            if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+        }
     }
 
     if(distance_to_target <= arrive_threshold)
@@ -1317,22 +1335,32 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     }
     if(state == &portion_2)
     {
-        steering_gain = PORTION2_STEERING_GAIN;
+        steering_gain = route11_reverse ? PORTION2_ROUTE11_STEERING_GAIN : PORTION2_STEERING_GAIN;
         reference_turn = portion2_max_reference_turn(state, state->current_point_index,
                                                        PORTION2_SHARP_TURN_RAW_LOOKAHEAD);
         if(reference_turn >= PORTION2_SHARP_TURN_TRIGGER_DEG)
         {
-            steering_limit = portion2_selected_route == PORTION2_ROUTE_SNAKE
-                    ? PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT : PORTION2_SHARP_STEERING_CMD_LIMIT;
+            steering_limit = route11_reverse ? PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT
+                    : (portion2_selected_route == PORTION2_ROUTE_SNAKE
+                            ? PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT : PORTION2_SHARP_STEERING_CMD_LIMIT);
         }
         else
         {
-            steering_limit = portion2_selected_route == PORTION2_ROUTE_SNAKE
-                    ? PORTION2_SNAKE_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT;
+            steering_limit = route11_reverse ? PORTION2_ROUTE11_STEERING_CMD_LIMIT
+                    : (portion2_selected_route == PORTION2_ROUTE_SNAKE
+                            ? PORTION2_SNAKE_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT);
         }
         steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
-        if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
-        if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+        if(route11_reverse)
+        {
+            if(steer_preview_steps < PORTION2_ROUTE11_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_ROUTE11_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_ROUTE11_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_ROUTE11_CURVE_PREVIEW_STEPS;
+        }
+        else
+        {
+            if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
+        }
     }
 
     pursuit_midhandle(state , &current_point , steer_preview_steps , &preview_alpha , &actual_ld);
@@ -1364,6 +1392,10 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    float dist_to_final = get_distance(state->current_state, final_point);
    guandao_debug_dist_final = dist_to_final;
    float v_center = base_speed;
+   if(route11_reverse && v_center > PORTION2_ROUTE11_SPEED)
+   {
+       v_center = PORTION2_ROUTE11_SPEED;
+   }
    uint8 portion1_parking_zone = 0;
 
    if(portion1_parking_zone)
