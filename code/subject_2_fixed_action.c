@@ -192,11 +192,65 @@ static void subject_2_encoder_yaw_finish(const char *reason)
     voice_drive_action_stop();
 }
 
+static void subject_2_encoder_yaw_update_steer(uint32 now_ms, uint8 reverse)
+{
+    uint32 control_elapsed_ms = now_ms - subject_2_fixed_action_state.last_control_ms;
+
+    if(control_elapsed_ms >= SUBJECT_2_ENCODER_YAW_CONTROL_MS)
+    {
+        float dt_s = (float)control_elapsed_ms * 0.001f;
+        float yaw_error = subject_2_fixed_action_state.yaw_target - Yaw_Straight_1;
+        float yaw_error_delta;
+        float yaw_error_integral_old;
+        float correction_without_new_integral;
+        float correction_with_new_integral;
+        float steer_command;
+        float steer_delta;
+
+        while(yaw_error > 180.0f) yaw_error -= 360.0f;
+        while(yaw_error < -180.0f) yaw_error += 360.0f;
+        if(subject_2_fixed_abs_float(yaw_error) < SUBJECT_2_ENCODER_YAW_DEADBAND_DEG) yaw_error = 0.0f;
+        yaw_error_delta = subject_2_fixed_yaw_step(yaw_error, subject_2_fixed_action_state.yaw_error_last);
+        yaw_error_integral_old = subject_2_fixed_action_state.yaw_error_integral;
+        subject_2_fixed_action_state.yaw_error_integral += yaw_error * dt_s;
+        Value_Limit_float(&subject_2_fixed_action_state.yaw_error_integral,
+                          -SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT,
+                          SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT);
+        correction_without_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
+                + SUBJECT_2_ENCODER_YAW_KI * yaw_error_integral_old
+                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
+        correction_with_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
+                + SUBJECT_2_ENCODER_YAW_KI * subject_2_fixed_action_state.yaw_error_integral
+                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
+        if(subject_2_fixed_abs_float(correction_with_new_integral) > SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG
+                && subject_2_fixed_abs_float(correction_with_new_integral)
+                        > subject_2_fixed_abs_float(correction_without_new_integral))
+        {
+            subject_2_fixed_action_state.yaw_error_integral = yaw_error_integral_old;
+            correction_with_new_integral = correction_without_new_integral;
+        }
+        steer_command = -correction_with_new_integral;
+        if(reverse)
+        {
+            steer_command = -steer_command;
+        }
+        Value_Limit_float(&steer_command,
+                          -SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG,
+                          SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG);
+        steer_delta = steer_command - subject_2_fixed_action_state.steer_command;
+        Value_Limit_float(&steer_delta,
+                          -SUBJECT_2_ENCODER_YAW_STEER_RATE_DEG,
+                          SUBJECT_2_ENCODER_YAW_STEER_RATE_DEG);
+        subject_2_fixed_action_state.steer_command += steer_delta;
+        subject_2_fixed_action_state.yaw_error_last = yaw_error;
+        subject_2_fixed_action_state.last_control_ms = now_ms;
+    }
+}
+
 static void subject_2_encoder_yaw_task(uint32 now_ms)
 {
     int16 encoder_now = l_ecdcounter();
     int32 encoder_delta = calculate_delta(encoder_now, subject_2_fixed_action_state.encoder_last_count);
-    uint32 control_elapsed_ms = now_ms - subject_2_fixed_action_state.last_control_ms;
     float distance_step = 0.0f;
     float remaining;
     float speed_mps;
@@ -235,55 +289,8 @@ static void subject_2_encoder_yaw_task(uint32 now_ms)
                 * remaining / SUBJECT_2_ENCODER_YAW_SLOWDOWN_M;
     }
 
-    if(control_elapsed_ms >= SUBJECT_2_ENCODER_YAW_CONTROL_MS)
-    {
-        float dt_s = (float)control_elapsed_ms * 0.001f;
-        float yaw_error = subject_2_fixed_action_state.yaw_target - Yaw_Straight_1;
-        float yaw_error_delta;
-        float yaw_error_integral_old;
-        float correction_without_new_integral;
-        float correction_with_new_integral;
-        float steer_command;
-        float steer_delta;
-
-        while(yaw_error > 180.0f) yaw_error -= 360.0f;
-        while(yaw_error < -180.0f) yaw_error += 360.0f;
-        if(subject_2_fixed_abs_float(yaw_error) < SUBJECT_2_ENCODER_YAW_DEADBAND_DEG) yaw_error = 0.0f;
-        yaw_error_delta = subject_2_fixed_yaw_step(yaw_error, subject_2_fixed_action_state.yaw_error_last);
-        yaw_error_integral_old = subject_2_fixed_action_state.yaw_error_integral;
-        subject_2_fixed_action_state.yaw_error_integral += yaw_error * dt_s;
-        Value_Limit_float(&subject_2_fixed_action_state.yaw_error_integral,
-                          -SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT,
-                          SUBJECT_2_ENCODER_YAW_INTEGRAL_LIMIT);
-        correction_without_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
-                + SUBJECT_2_ENCODER_YAW_KI * yaw_error_integral_old
-                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
-        correction_with_new_integral = SUBJECT_2_ENCODER_YAW_KP * yaw_error
-                + SUBJECT_2_ENCODER_YAW_KI * subject_2_fixed_action_state.yaw_error_integral
-                + SUBJECT_2_ENCODER_YAW_KD * yaw_error_delta / dt_s;
-        if(subject_2_fixed_abs_float(correction_with_new_integral) > SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG
-                && subject_2_fixed_abs_float(correction_with_new_integral)
-                        > subject_2_fixed_abs_float(correction_without_new_integral))
-        {
-            subject_2_fixed_action_state.yaw_error_integral = yaw_error_integral_old;
-            correction_with_new_integral = correction_without_new_integral;
-        }
-        steer_command = -correction_with_new_integral;
-        if(subject_2_fixed_action_state.mode == VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M)
-        {
-            steer_command = -steer_command;
-        }
-        Value_Limit_float(&steer_command,
-                          -SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG,
-                          SUBJECT_2_ENCODER_YAW_STEER_LIMIT_DEG);
-        steer_delta = steer_command - subject_2_fixed_action_state.steer_command;
-        Value_Limit_float(&steer_delta,
-                          -SUBJECT_2_ENCODER_YAW_STEER_RATE_DEG,
-                          SUBJECT_2_ENCODER_YAW_STEER_RATE_DEG);
-        subject_2_fixed_action_state.steer_command += steer_delta;
-        subject_2_fixed_action_state.yaw_error_last = yaw_error;
-        subject_2_fixed_action_state.last_control_ms = now_ms;
-    }
+    subject_2_encoder_yaw_update_steer(now_ms,
+            (subject_2_fixed_action_state.mode == VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M) ? 1U : 0U);
 
     subject_2_fixed_action_state.speed_command =
             (subject_2_fixed_action_state.mode == VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M)
@@ -291,6 +298,55 @@ static void subject_2_encoder_yaw_task(uint32 now_ms)
     subject_2_fixed_apply(subject_2_fixed_action_state.speed_command,
                           subject_2_fixed_action_state.steer_command);
     subject_2_encoder_yaw_log("RUN", "NONE", 0U);
+}
+
+static void subject_2_turn_pre_straight_task(uint32 now_ms)
+{
+    int16 encoder_now = l_ecdcounter();
+    int32 encoder_delta = calculate_delta(encoder_now, subject_2_fixed_action_state.encoder_last_count);
+    float distance_step = 0.0f;
+
+    subject_2_fixed_action_state.encoder_last_count = encoder_now;
+    subject_2_fixed_action_state.encoder_delta_last = encoder_delta;
+    if(encoder_delta <= SUBJECT_2_ENCODER_YAW_MAX_DELTA && encoder_delta >= -SUBJECT_2_ENCODER_YAW_MAX_DELTA)
+    {
+        distance_step = subject_2_fixed_abs_float((float)encoder_delta) * ONE_TICK_DISTANCE;
+        subject_2_fixed_action_state.distance_m += distance_step;
+        subject_2_fixed_action_state.phase_distance_m += distance_step;
+        if(subject_2_fixed_action_state.phase_distance_m - subject_2_fixed_action_state.progress_distance_mark
+                >= SUBJECT_2_ENCODER_YAW_PROGRESS_M)
+        {
+            subject_2_fixed_action_state.last_progress_ms = now_ms;
+            subject_2_fixed_action_state.progress_distance_mark = subject_2_fixed_action_state.phase_distance_m;
+        }
+    }
+
+    if(subject_2_fixed_action_state.phase_distance_m >= SUBJECT_2_FIXED_TURN_PRE_DISTANCE_M)
+    {
+        subject_2_fixed_action_state.turn_phase = SUBJECT_2_FIXED_TURN_PHASE_TURN;
+        subject_2_fixed_action_state.phase_distance_m = 0.0f;
+        subject_2_fixed_action_state.yaw_last = Yaw_1;
+        subject_2_fixed_action_state.yaw_target = Yaw_1;
+        subject_2_fixed_action_state.yaw_delta = 0.0f;
+        subject_2_fixed_action_state.yaw_error_last = 0.0f;
+        subject_2_fixed_action_state.yaw_error_integral = 0.0f;
+        subject_2_fixed_action_state.steer_command = 0.0f;
+        subject_2_fixed_action_state.speed_command = SUBJECT_2_FIXED_TURN_SPEED_MPS;
+        subject_2_fixed_apply(subject_2_fixed_action_state.speed_command, 0.0f);
+        subject_2_encoder_yaw_log("TURN", "DISTANCE", 1U);
+        return;
+    }
+    if((uint32)(now_ms - subject_2_fixed_action_state.last_progress_ms) >= SUBJECT_2_ENCODER_YAW_STALL_MS)
+    {
+        subject_2_encoder_yaw_finish("STALL");
+        return;
+    }
+
+    subject_2_encoder_yaw_update_steer(now_ms, 0U);
+    subject_2_fixed_action_state.speed_command = SUBJECT_2_FIXED_TURN_SPEED_MPS;
+    subject_2_fixed_apply(subject_2_fixed_action_state.speed_command,
+                          subject_2_fixed_action_state.steer_command);
+    subject_2_encoder_yaw_log("RUN", "TURN_PRE", 0U);
 }
 
 static void subject_2_fixed_apply(float speed_mps, float steer_deg)
@@ -454,15 +510,18 @@ void voice_drive_action_stop(void)
 
 void voice_drive_action_start(voice_drive_action_mode_t mode)
 {
+    uint8 uses_straight_yaw;
+
     voice_drive_action_stop();
     subject_2_fixed_action_state.mode = mode;
     subject_2_fixed_action_state.start_ms = system_getval_ms();
     subject_2_fixed_action_state.last_ms = subject_2_fixed_action_state.start_ms;
     subject_2_fixed_action_state.distance_m = 0.0f;
     subject_2_fixed_action_state.phase_distance_m = 0.0f;
-    subject_2_fixed_action_state.yaw_last = subject_2_fixed_is_encoder_yaw_action(mode) ? Yaw_Straight_1 : Yaw_1;
+    uses_straight_yaw = (subject_2_fixed_is_encoder_yaw_action(mode) || subject_2_fixed_is_turn_action(mode)) ? 1U : 0U;
+    subject_2_fixed_action_state.yaw_last = uses_straight_yaw ? Yaw_Straight_1 : Yaw_1;
     subject_2_fixed_action_state.yaw_delta = 0.0f;
-    subject_2_fixed_action_state.yaw_target = subject_2_fixed_is_encoder_yaw_action(mode) ? Yaw_Straight_1 : Yaw_1;
+    subject_2_fixed_action_state.yaw_target = uses_straight_yaw ? Yaw_Straight_1 : Yaw_1;
     subject_2_fixed_action_state.turn_phase = subject_2_fixed_is_turn_action(mode) ? SUBJECT_2_FIXED_TURN_PHASE_STRAIGHT : SUBJECT_2_FIXED_TURN_PHASE_NONE;
     subject_2_fixed_action_state.encoder_last_count = l_ecdcounter();
     subject_2_fixed_action_state.encoder_delta_last = 0;
@@ -474,7 +533,7 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
     subject_2_fixed_action_state.last_control_ms = subject_2_fixed_action_state.start_ms;
     subject_2_fixed_action_state.last_progress_ms = subject_2_fixed_action_state.start_ms;
     conrtol_mode = GUANDAO;
-    if(subject_2_fixed_is_encoder_yaw_action(mode))
+    if(subject_2_fixed_is_encoder_yaw_action(mode) || subject_2_fixed_is_turn_action(mode))
     {
         subject_2_encoder_yaw_log("START", "NONE", 1U);
     }
@@ -500,6 +559,12 @@ void voice_drive_action_task(void)
     if(subject_2_fixed_is_encoder_yaw_action(subject_2_fixed_action_state.mode))
     {
         subject_2_encoder_yaw_task(now_ms);
+        return;
+    }
+    if(subject_2_fixed_is_turn_action(subject_2_fixed_action_state.mode)
+            && subject_2_fixed_action_state.turn_phase == SUBJECT_2_FIXED_TURN_PHASE_STRAIGHT)
+    {
+        subject_2_turn_pre_straight_task(now_ms);
         return;
     }
 
