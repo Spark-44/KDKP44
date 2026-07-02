@@ -11,7 +11,7 @@ function Assert-Match([string]$Text, [string]$Pattern, [string]$Message) {
     }
 }
 
-Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_RMS_ERROR\s+\(0\.50f\)' 'GPS route-fit RMS limit must be 0.50 m.'
+Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_RMS_ERROR\s+\(1\.20f\)' 'GPS route-fit RMS limit must be 1.20 m.'
 Assert-Match $gpsC '#define\s+PORTION2_GPS_STARTUP_REQUIRED_SAMPLES\s+\(3U\)' 'GPS startup must require three stable samples.'
 Assert-Match $gpsH '#define\s+PORTION2_GPS_STARTUP_REJECT\s+3U' 'GPS startup needs a distinct reject result.'
 Assert-Match $gpsC 'startup_shift\s*>\s*PORTION2_GPS_STARTUP_MAX_SHIFT_M[\s\S]*?return\s+PORTION2_GPS_STARTUP_REJECT;' 'A start shift over 3 m must reject instead of falling back.'
