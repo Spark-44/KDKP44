@@ -24,8 +24,32 @@ static float i_error_z = 0.0f;
 #define IMU_AHRS_DELTA_T     0.0051f
 #define IMU_AHRS_ACC_ALPHA   0.3f
 #define STRAIGHT_YAW_GYRO_DEADBAND_RAD_S (0.005f)
+#define IMU_YAW_DEFAULT_DELTA_T (0.008f)
+#define IMU_YAW_MAX_DELTA_MS    (20U)
 
-static void IMU_Update_Straight_Yaw(void)
+static uint32 imu_yaw_last_update_ms = 0;
+
+static float IMU_Get_Yaw_Delta_T(void)
+{
+    uint32 now_ms = system_getval_ms();
+    uint32 elapsed_ms;
+
+    if(imu_yaw_last_update_ms == 0U)
+    {
+        imu_yaw_last_update_ms = now_ms;
+        return IMU_YAW_DEFAULT_DELTA_T;
+    }
+
+    elapsed_ms = (uint32)(now_ms - imu_yaw_last_update_ms);
+    imu_yaw_last_update_ms = now_ms;
+    if(elapsed_ms == 0U || elapsed_ms > IMU_YAW_MAX_DELTA_MS)
+    {
+        return IMU_YAW_DEFAULT_DELTA_T;
+    }
+    return (float)elapsed_ms * 0.001f;
+}
+
+static void IMU_Update_Straight_Yaw(float delta_t)
 {
     if(IMU_Data.gyro_z < STRAIGHT_YAW_GYRO_DEADBAND_RAD_S
             && IMU_Data.gyro_z > -STRAIGHT_YAW_GYRO_DEADBAND_RAD_S)
@@ -33,7 +57,7 @@ static void IMU_Update_Straight_Yaw(void)
         return;
     }
 
-    Yaw_Straight_1 -= RAD_TO_ANGLE(IMU_Data.gyro_z * 0.00916f);
+    Yaw_Straight_1 -= RAD_TO_ANGLE(IMU_Data.gyro_z * delta_t);
     if(Yaw_Straight_1 > 180.0f)
     {
         Yaw_Straight_1 -= 360.0f;
@@ -62,6 +86,7 @@ void IMU_init(void)
     Gyro_Offset.Zdata = 0.0f;
     Yaw_1 = 0.0f;
     Yaw_Straight_1 = 0.0f;
+    imu_yaw_last_update_ms = 0U;
 
     if(0 == imu963ra_init())
     {
@@ -96,13 +121,15 @@ void IMU_gyro_Offset_Init(void)
 
 void IMU_GetValues(void)
 {
+    float yaw_delta_t;
     if(IMU_1_Open_flag != 1)
     {
         return;
     }
 
+    yaw_delta_t = IMU_Get_Yaw_Delta_T();
     IMU_Data.gyro_z = ((float) imu963ra_gyro_z - Gyro_Offset.Zdata)* PI / 180.0f/ 14.3f;
-    IMU_Update_Straight_Yaw();
+    IMU_Update_Straight_Yaw(yaw_delta_t);
 
     if(IMU_Data.gyro_z<0.025&&IMU_Data.gyro_z>-0.025)
     {
@@ -110,15 +137,15 @@ void IMU_GetValues(void)
     }
     else
     {
-        IMU_Handle_180();
+        IMU_Handle_180(yaw_delta_t);
      }
 
 }
 
-void IMU_Handle_180(void)
+void IMU_Handle_180(float delta_t)
 {
 
-    Yaw_1-=RAD_TO_ANGLE(IMU_Data.gyro_z*0.00916  );
+    Yaw_1-=RAD_TO_ANGLE(IMU_Data.gyro_z * delta_t);
 
    if(Yaw_1>180 && Yaw_1<=360)
     {

@@ -326,13 +326,13 @@ static float subject_2_fixed_turn_yaw_delta(void)
     return subject_2_fixed_yaw_step(Yaw_1, subject_2_fixed_action_state.yaw_target);
 }
 
-static void subject_2_fixed_log_state(const char *tag)
+static void subject_2_fixed_log_state(const char *tag, uint8 force)
 {
     static uint32 last_log_ms = 0;
     uint32 now_ms = system_getval_ms();
     char line[160];
 
-    if((uint32)(now_ms - last_log_ms) < 200U)
+    if(!force && (uint32)(now_ms - last_log_ms) < 200U)
     {
         return;
     }
@@ -519,7 +519,7 @@ void voice_drive_action_task(void)
     subject_2_fixed_action_update(subject_2_fixed_action_state.mode, elapsed_ms, subject_2_fixed_action_state.distance_m, subject_2_fixed_action_state.yaw_delta, subject_2_fixed_action_state.yaw_target, Yaw_1, &fixed_action_output);
     speed_mps = fixed_action_output.speed_mps;
     steer_deg = fixed_action_output.steer_deg;
-    subject_2_fixed_log_state("RUN");
+    subject_2_fixed_log_state("RUN", 0U);
 
     if(!subject_2_fixed_is_encoder_yaw_action(subject_2_fixed_action_state.mode))
     {
@@ -531,7 +531,7 @@ void voice_drive_action_task(void)
     subject_2_fixed_action_update(subject_2_fixed_action_state.mode, elapsed_ms, subject_2_fixed_action_state.distance_m, subject_2_fixed_action_state.yaw_delta, subject_2_fixed_action_state.yaw_target, Yaw_1, &fixed_action_output);
     if(fixed_action_output.finished)
     {
-        subject_2_fixed_log_state("STOP");
+        subject_2_fixed_log_state("STOP", 1U);
         voice_drive_action_stop();
     }
 }

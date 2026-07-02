@@ -61,7 +61,7 @@ void IMU_gyro_Offset_Init(void);
 
 void IMU_GetValues(void);
 
-void IMU_Handle_180(void);
+void IMU_Handle_180(float delta_t);
 
 void IMU_data_get(void);
 
