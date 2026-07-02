@@ -49,7 +49,7 @@ uint8 swtich_gps(void);
 void trace_gps(guandao_state * e);
 
 void update_gpsinformation(void);
-void portion2_gps_note_parsed_update(void);
+void portion2_gps_note_parsed_update(uint8 parse_result);
 void gps_serial_diagnostic_task(void);
 
 int32 double_to_int32(double y);
@@ -72,4 +72,5 @@ uint8 portion2_gps_fusion_get_satellites(void);
 float portion2_gps_fusion_get_error(void);
 float portion2_gps_fusion_get_correction(void);
 uint32 portion2_gps_get_fix_sequence(void);
+uint32 portion2_gps_get_rmc_sequence(void);
 #endif /* CODE_GPS_H_ */

@@ -30,7 +30,7 @@ Assert-Contains $header '#define\s+PORTION2_ROUTE_RETURN_1\s+5' 'route 6 must re
 Assert-Contains $header '#define\s+PORTION2_ROUTE_RETURN_5\s+9' 'route 10 must replace old reverse route 5'
 Assert-Contains $header '#define\s+PORTION2_ROUTE_STRAIGHT\s+10' 'route 11 must be the straight route'
 Assert-Contains $header '#define\s+PORTION2_ROUTE_SNAKE\s+11' 'route 12 must be the snake route'
-Assert-Contains $source 'const uint8 portion2_route_required_gps_count\[PORTION2_ROUTE_COUNT\]\s*=\s*\{(?:\s*5,){11}\s*5\s*\}' 'all 12 routes must require GPS points'
+Assert-Contains $source 'const uint8 portion2_route_required_gps_count\[PORTION2_ROUTE_COUNT\]\s*=\s*\{(?:\s*8,){11}\s*8\s*\}' 'all 12 routes must require eight trustworthy GPS points'
 Assert-Contains $flash 'PORTION2_ROUTE_CONTINUATION_MAGIC' 'expanded inertial records must use a continuation flash page'
 Assert-Contains $flash '#define\s+PORTION2_GPS_PRIMARY_RECORDS\s+\(\(PORTION2_FLASH_PAGE_WORDS\s*-\s*PORTION2_GPS_PAGE_HEADER_WORDS\)\s*/\s*4\)' 'primary GPS page capacity must be calculated from the flash page size'
 Assert-Contains $flash '#define\s+PORTION2_GPS_CONTINUATION_RECORDS\s+\(PORTION2_TOTAL_GPS_COUNT\s*-\s*PORTION2_GPS_PRIMARY_RECORDS\)' 'remaining GPS records must use a continuation page'

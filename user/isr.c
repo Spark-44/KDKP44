@@ -67,7 +67,7 @@ IFX_INTERRUPT(cc61_pit_ch0_isr, 0, CCU6_1_CH0_ISR_PRIORITY)
 
                 if(parse_result & (GNSS_PARSE_RMC_OK | GNSS_PARSE_GGA_OK))
                 {
-                    portion2_gps_note_parsed_update();
+                    portion2_gps_note_parsed_update(parse_result);
                 }
                 if(Main_Key_Flag && (parse_result & GNSS_PARSE_RMC_OK))
                 {
