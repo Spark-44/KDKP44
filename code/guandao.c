@@ -161,30 +161,9 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT 25.0f
 #define PORTION2_ROUTE11_MIN_PREVIEW_STEPS 20
 #define PORTION2_ROUTE11_CURVE_PREVIEW_STEPS 32
-#define PORTION2_ROUTE11_SPEED         10.0f
-#define PORTION2_SNAKE_STEERING_GAIN   0.80f
+#define PORTION2_ROUTE11_SPEED         6.0f
 #define PORTION2_SNAKE_STEERING_CMD_LIMIT 20.0f
 #define PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT 30.0f
-#define PORTION2_SNAKE_STRAIGHT_SPEED  10.0f
-#define PORTION2_SNAKE_CURVE_SPEED     8.0f
-#define PORTION2_SNAKE_SHARP_SPEED     6.0f
-#define PORTION2_SNAKE_STRAIGHT_PREVIEW_STEPS 18
-#define PORTION2_SNAKE_STRAIGHT_CURVE_PREVIEW_STEPS 28
-#define PORTION2_SNAKE_CURVE_PREVIEW_STEPS 12
-#define PORTION2_SNAKE_CURVE_LOOKAHEAD_STEPS 20
-#define PORTION2_SNAKE_SHARP_PREVIEW_STEPS 8
-#define PORTION2_SNAKE_SHARP_LOOKAHEAD_STEPS 14
-#define PORTION2_SNAKE_STEER_RATE      0.35f
-#define PORTION2_SNAKE_CURVE_STEER_RATE 0.45f
-#define PORTION2_SNAKE_SHARP_STEER_RATE 0.60f
-#define PORTION2_SNAKE_CURVE_TRIGGER_DEG 4.0f
-#define PORTION2_SNAKE_SHARP_TRIGGER_DEG 8.0f
-#define PORTION2_SNAKE_CURVE_STEER_DEG 10.0f
-#define PORTION2_SNAKE_SHARP_STEER_DEG 20.0f
-#define PORTION2_SNAKE_FINAL_ZONE_M    3.0f
-#define PORTION2_SNAKE_TURN_STRAIGHT   0U
-#define PORTION2_SNAKE_TURN_CURVE      1U
-#define PORTION2_SNAKE_TURN_SHARP      2U
 #define PORTION2_SHARP_TURN_TRIGGER_DEG 4.0f
 #define PORTION2_SHARP_TURN_RAW_LOOKAHEAD 6
 #define PORTION2_STEER_RATE_LIMIT      0.5f
@@ -1212,35 +1191,6 @@ void portion2_points_recode(void)
 
 }
 
-static uint8 portion2_snake_turn_level(float reference_turn)
-{
-    if(reference_turn >= PORTION2_SNAKE_SHARP_TRIGGER_DEG)
-    {
-        return PORTION2_SNAKE_TURN_SHARP;
-    }
-    if(reference_turn >= PORTION2_SNAKE_CURVE_TRIGGER_DEG)
-    {
-        return PORTION2_SNAKE_TURN_CURVE;
-    }
-    return PORTION2_SNAKE_TURN_STRAIGHT;
-}
-
-static float portion2_snake_speed_limit(uint8 turn_level, float steering, float dist_to_final)
-{
-    if(dist_to_final <= PORTION2_SNAKE_FINAL_ZONE_M
-            || turn_level == PORTION2_SNAKE_TURN_SHARP
-            || fabsf(steering) >= PORTION2_SNAKE_SHARP_STEER_DEG)
-    {
-        return PORTION2_SNAKE_SHARP_SPEED;
-    }
-    if(turn_level == PORTION2_SNAKE_TURN_CURVE
-            || fabsf(steering) >= PORTION2_SNAKE_CURVE_STEER_DEG)
-    {
-        return PORTION2_SNAKE_CURVE_SPEED;
-    }
-    return PORTION2_SNAKE_STRAIGHT_SPEED;
-}
-
 void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,float *out_servo)
 {
     float actual_ld = 0 , preview_alpha =0;
@@ -1260,7 +1210,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     uint8 route11_reverse = (state == &portion_2
             && portion2_selected_route == PORTION2_ROUTE_STRAIGHT
             && portion2_run_drive_reverse) ? 1U : 0U;
-    uint8 snake_turn_level = PORTION2_SNAKE_TURN_STRAIGHT;
 
     guandao_debug_stop_reason = 0;
     if(route_length == 0 || state->current_point_index == route_length)
@@ -1386,51 +1335,31 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
     }
     if(state == &portion_2)
     {
+        steering_gain = route11_reverse ? PORTION2_ROUTE11_STEERING_GAIN : PORTION2_STEERING_GAIN;
         reference_turn = portion2_max_reference_turn(state, state->current_point_index,
                                                        PORTION2_SHARP_TURN_RAW_LOOKAHEAD);
-        if(portion2_selected_route == PORTION2_ROUTE_SNAKE)
+        if(reference_turn >= PORTION2_SHARP_TURN_TRIGGER_DEG)
         {
-            snake_turn_level = portion2_snake_turn_level(reference_turn);
-            steering_gain = PORTION2_SNAKE_STEERING_GAIN;
-            if(snake_turn_level == PORTION2_SNAKE_TURN_SHARP)
-            {
-                steering_limit = PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT;
-                steer_preview_steps = PORTION2_SNAKE_SHARP_PREVIEW_STEPS;
-                curve_preview_steps = PORTION2_SNAKE_SHARP_LOOKAHEAD_STEPS;
-                steering_rate_limit = PORTION2_SNAKE_SHARP_STEER_RATE;
-            }
-            else if(snake_turn_level == PORTION2_SNAKE_TURN_CURVE)
-            {
-                steering_limit = PORTION2_SNAKE_STEERING_CMD_LIMIT;
-                steer_preview_steps = PORTION2_SNAKE_CURVE_PREVIEW_STEPS;
-                curve_preview_steps = PORTION2_SNAKE_CURVE_LOOKAHEAD_STEPS;
-                steering_rate_limit = PORTION2_SNAKE_CURVE_STEER_RATE;
-            }
-            else
-            {
-                steering_limit = PORTION2_SNAKE_STEERING_CMD_LIMIT;
-                steer_preview_steps = PORTION2_SNAKE_STRAIGHT_PREVIEW_STEPS;
-                curve_preview_steps = PORTION2_SNAKE_STRAIGHT_CURVE_PREVIEW_STEPS;
-                steering_rate_limit = PORTION2_SNAKE_STEER_RATE;
-            }
+            steering_limit = route11_reverse ? PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT
+                    : (portion2_selected_route == PORTION2_ROUTE_SNAKE
+                            ? PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT : PORTION2_SHARP_STEERING_CMD_LIMIT);
         }
         else
         {
-            steering_gain = route11_reverse ? PORTION2_ROUTE11_STEERING_GAIN : PORTION2_STEERING_GAIN;
-            steering_limit = reference_turn >= PORTION2_SHARP_TURN_TRIGGER_DEG
-                    ? (route11_reverse ? PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT : PORTION2_SHARP_STEERING_CMD_LIMIT)
-                    : (route11_reverse ? PORTION2_ROUTE11_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT);
-            steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
-            if(route11_reverse)
-            {
-                if(steer_preview_steps < PORTION2_ROUTE11_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_ROUTE11_MIN_PREVIEW_STEPS;
-                if(curve_preview_steps < PORTION2_ROUTE11_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_ROUTE11_CURVE_PREVIEW_STEPS;
-            }
-            else
-            {
-                if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
-                if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
-            }
+            steering_limit = route11_reverse ? PORTION2_ROUTE11_STEERING_CMD_LIMIT
+                    : (portion2_selected_route == PORTION2_ROUTE_SNAKE
+                            ? PORTION2_SNAKE_STEERING_CMD_LIMIT : PORTION2_STEERING_CMD_LIMIT);
+        }
+        steering_rate_limit = PORTION2_STEER_RATE_LIMIT;
+        if(route11_reverse)
+        {
+            if(steer_preview_steps < PORTION2_ROUTE11_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_ROUTE11_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_ROUTE11_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_ROUTE11_CURVE_PREVIEW_STEPS;
+        }
+        else
+        {
+            if(steer_preview_steps < PORTION2_MIN_PREVIEW_STEPS) steer_preview_steps = PORTION2_MIN_PREVIEW_STEPS;
+            if(curve_preview_steps < PORTION2_CURVE_PREVIEW_STEPS) curve_preview_steps = PORTION2_CURVE_PREVIEW_STEPS;
         }
     }
 
@@ -1466,13 +1395,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    if(route11_reverse && v_center > PORTION2_ROUTE11_SPEED)
    {
        v_center = PORTION2_ROUTE11_SPEED;
-   }
-   if(state == &portion_2 && portion2_selected_route == PORTION2_ROUTE_SNAKE)
-   {
-       float snake_speed_limit = portion2_snake_speed_limit(snake_turn_level,
-                                                              target_steering,
-                                                              dist_to_final);
-       if(v_center > snake_speed_limit) v_center = snake_speed_limit;
    }
    uint8 portion1_parking_zone = 0;
 
