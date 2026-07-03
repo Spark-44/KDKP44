@@ -1,10 +1,10 @@
-# Route 2 Terminal Pose Implementation Plan
+# Routes 1-10 Terminal Pose Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make route 2 converge to its recorded endpoint heading without changing other routes.
+**Goal:** Make routes 1-10 converge to their recorded endpoint heading without changing routes 11-12.
 
-**Architecture:** Add one route-specific terminal steering helper in `code/guandao.c`. The helper blends the existing path command with final-yaw feedback only inside the final 2.0 m, while route 2 receives a 0.35 m yaw-alignment entry distance.
+**Architecture:** Use one shared terminal steering helper for routes 1-10. It blends path steering with final-yaw feedback inside the final 2.0 m, applies a 0.35 m yaw-alignment entry distance, arms overshoot detection at 1.50 m, and slows large terminal heading errors to 0.8 m/s.
 
 **Tech Stack:** TASKING C99, PowerShell static regression tests.
 
