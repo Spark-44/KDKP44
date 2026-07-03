@@ -222,6 +222,7 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_SNAKE_OVERSHOOT_ARM_DIST 0.80f
 #define PORTION2_SNAKE_OVERSHOOT_RISE_DIST 0.15f
 #define PORTION2_SNAKE_OVERSHOOT_CONFIRM_CYCLES 3U
+#define PORTION2_FINAL_OVERSHOOT_ARM_DIST 1.00f
 #define PORTION2_FINAL_OVERSHOOT_RISE_DIST 0.15f
 #define PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES 3U
 #define PORTION2_FINAL_YAW_TOLERANCE_DEG 5.0f
@@ -813,7 +814,7 @@ static uint8 portion2_final_zone_overshoot_detect(int16 raw_point, int16 raw_len
 
     if(!portion2_final_zone_armed)
     {
-        if(dist_to_final <= PORTION2_FINAL_RAW_POINT_STOP_DIST)
+        if(dist_to_final <= PORTION2_FINAL_OVERSHOOT_ARM_DIST)
         {
             portion2_final_zone_armed = 1;
             portion2_final_zone_min_dist = dist_to_final;
@@ -1709,7 +1710,7 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
             return;
         }
         if(raw_length > 0 && raw_point >= raw_length - 1
-                && (dist_to_final <= final_stop_distance || portion2_final_zone_armed))
+                && dist_to_final <= final_stop_distance)
         {
             uint8 align_status = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
             if(align_status == PORTION2_FINAL_YAW_ALIGN_RUNNING)
