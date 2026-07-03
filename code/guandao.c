@@ -3217,18 +3217,6 @@ void portion2_run_task(void)
             {
                 portion2_state_flag = 2;
             }
-            else if(gps_startup_result == PORTION2_GPS_STARTUP_REJECT)
-            {
-                portion2_run_reject_reason = 6;
-                portion2_state_flag = 0;
-                portion2_run_reverse = 0;
-                portion2_run_drive_reverse = 0;
-                daoche_flag = 0;
-                conrtol_mode = GUANDAO;
-                portion2_gps_fusion_reset();
-                Buzzer_check(80); Buzzer_check(80);
-                uart_write_string(DEBUG_UART_INDEX, "[P2-RUN-REJECT] reason=GPS_START_SHIFT\r\n");
-            }
             break;
         case 2:
             guandao_trace_direct(&portion_2);

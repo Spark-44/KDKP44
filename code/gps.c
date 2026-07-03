@@ -12,7 +12,7 @@ Lost_Point lost_judge;
 #define PORTION2_GPS_FUSION_MIN_INLIERS       (8U)
 #define PORTION2_GPS_FUSION_MAX_ANCHOR_RESIDUAL (1.5f)
 #define PORTION2_GPS_FUSION_REPEAT_DISTANCE   (0.05f)
-#define PORTION2_GPS_FUSION_MAX_ERROR         (3.0f)
+#define PORTION2_GPS_FUSION_MAX_ERROR         (1.5f)
 #define PORTION2_GPS_FUSION_GAIN              (0.10f)
 #define PORTION2_GPS_FUSION_MAX_CORRECTION    (0.10f)
 #define PORTION2_GPS_FUSION_MIN_SCALE         (0.40f)
@@ -504,12 +504,13 @@ uint8 portion2_gps_fusion_startup_update(guandao_state *state)
     if(portion2_gps_fusion.startup_shift > PORTION2_GPS_STARTUP_MAX_SHIFT_M)
     {
         portion2_gps_fusion.ready = 0;
-        portion2_gps_fusion.recovering = 1;
+        portion2_gps_fusion.last_valid = 0;
+        portion2_gps_fusion.recovering = 0;
         portion2_gps_fusion.recovery_good_count = 0;
         portion2_gps_fusion.startup_active = 0;
         portion2_gps_fusion.last_reason = 21;
         portion2_gps_fusion_log(state);
-        return PORTION2_GPS_STARTUP_REJECT;
+        return PORTION2_GPS_STARTUP_FALLBACK;
     }
     portion2_gps_fusion.transform_tx += state->current_state.x - mean_x;
     portion2_gps_fusion.transform_ty += state->current_state.y - mean_y;

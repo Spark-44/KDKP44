@@ -29,6 +29,7 @@ Assert-Match $guandao 'if\(!portion2_record_try_gps_point\(0\)\)[\s\S]*?portion2
 Assert-Match $guandao 'portion2_route_required_gps_count[^;]*\{8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8\}' 'Every route must require eight trustworthy GPS anchors.'
 
 Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_ANCHOR_RESIDUAL\s+\(1\.5f\)' 'Fit outliers must be clipped above 1.5 m.'
+Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_ERROR\s+\(1\.5f\)' 'Runtime GPS disagreement above 1.5 m must be quarantined.'
 Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MIN_INLIERS\s+\(8U\)' 'Route fitting must require eight inliers.'
 Assert-Match $gpsC 'portion2_gps_fit_transform' 'Similarity fitting must be reusable for the refit.'
 Assert-Match $gpsC 'inlier_mask\s*\[PORTION2_GPS_PER_ROUTE\]' 'Robust fitting must use a fixed-size inlier mask.'
