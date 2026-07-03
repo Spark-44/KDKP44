@@ -13,8 +13,10 @@ function Assert-Match([string]$Text, [string]$Pattern, [string]$Message) {
 
 Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_RMS_ERROR\s+\(1\.20f\)' 'GPS route-fit RMS limit must be 1.20 m.'
 Assert-Match $gpsC '#define\s+PORTION2_GPS_STARTUP_REQUIRED_SAMPLES\s+\(3U\)' 'GPS startup must require three stable samples.'
+Assert-Match $gpsC '#define\s+PORTION2_GPS_STARTUP_STABILITY_M\s+\(1\.2f\)' 'GPS startup stability radius must be 1.2 m.'
+Assert-Match $gpsC '#define\s+PORTION2_GPS_FUSION_MAX_HDOP\s+\(3\.0f\)' 'GPS startup must accept HDOP up to 3.0.'
 Assert-Match $gpsH '#define\s+PORTION2_GPS_STARTUP_REJECT\s+3U' 'GPS startup needs a distinct reject result.'
-Assert-Match $gpsC 'startup_shift\s*>\s*PORTION2_GPS_STARTUP_MAX_SHIFT_M[\s\S]*?return\s+PORTION2_GPS_STARTUP_REJECT;' 'A start shift over 3 m must reject instead of falling back.'
+Assert-Match $gpsC 'startup_shift\s*>\s*PORTION2_GPS_STARTUP_MAX_SHIFT_M[\s\S]*?return\s+PORTION2_GPS_STARTUP_REJECT;' 'A start shift over 5 m must reject instead of falling back.'
 
 Assert-Match $guandao 'portion2_route_uses_gps\(portion2_selected_route\)[\s\S]*?if\(!gps_prepare_ready\)[\s\S]*?portion2_run_reject_reason\s*=\s*5;' 'A route with an invalid GPS fit must be rejected before movement.'
 Assert-Match $guandao 'gps_startup_result\s*==\s*PORTION2_GPS_STARTUP_REJECT[\s\S]*?portion2_run_reject_reason\s*=\s*6;' 'A GPS startup position mismatch must reject the run.'
