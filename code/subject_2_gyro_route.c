@@ -1,0 +1,124 @@
+#include "subject_2_gyro_route.h"
+
+typedef struct
+{
+    float distance_m;
+    float relative_yaw_deg;
+} subject_2_gyro_route_sample_t;
+
+#define GYRO_ROUTE_13_SAMPLE(distance, yaw) { (distance), (yaw) }
+#define GYRO_ROUTE_14_SAMPLE(distance, yaw) { (distance), (yaw) }
+
+static const subject_2_gyro_route_sample_t subject_2_gyro_route_13[] =
+{
+    GYRO_ROUTE_13_SAMPLE(0.0000f, 0.00f),
+    GYRO_ROUTE_13_SAMPLE(0.4001f, -7.67f),
+    GYRO_ROUTE_13_SAMPLE(0.8080f, -15.79f),
+    GYRO_ROUTE_13_SAMPLE(1.2133f, -18.34f),
+    GYRO_ROUTE_13_SAMPLE(1.6281f, -16.80f),
+    GYRO_ROUTE_13_SAMPLE(2.0307f, -13.78f),
+    GYRO_ROUTE_13_SAMPLE(2.4467f, -10.14f),
+    GYRO_ROUTE_13_SAMPLE(2.8498f, -5.68f),
+    GYRO_ROUTE_13_SAMPLE(3.2598f, 2.18f),
+    GYRO_ROUTE_13_SAMPLE(3.6560f, 12.35f),
+    GYRO_ROUTE_13_SAMPLE(4.0641f, 20.13f),
+    GYRO_ROUTE_13_SAMPLE(4.4665f, 28.09f),
+    GYRO_ROUTE_13_SAMPLE(4.8715f, 34.53f),
+    GYRO_ROUTE_13_SAMPLE(5.2855f, 33.14f),
+    GYRO_ROUTE_13_SAMPLE(5.6937f, 26.88f),
+    GYRO_ROUTE_13_SAMPLE(6.1100f, 18.57f),
+    GYRO_ROUTE_13_SAMPLE(6.5223f, 7.50f),
+    GYRO_ROUTE_13_SAMPLE(6.9234f, -3.64f),
+    GYRO_ROUTE_13_SAMPLE(7.3279f, -14.26f),
+    GYRO_ROUTE_13_SAMPLE(7.7359f, -23.22f),
+    GYRO_ROUTE_13_SAMPLE(8.1431f, -28.39f),
+    GYRO_ROUTE_13_SAMPLE(8.5549f, -30.44f),
+    GYRO_ROUTE_13_SAMPLE(8.9709f, -29.80f),
+    GYRO_ROUTE_13_SAMPLE(9.3779f, -25.53f),
+    GYRO_ROUTE_13_SAMPLE(9.7923f, -17.70f),
+    GYRO_ROUTE_13_SAMPLE(10.2002f, -8.11f),
+    GYRO_ROUTE_13_SAMPLE(10.6103f, 2.34f),
+    GYRO_ROUTE_13_SAMPLE(11.0164f, 12.20f),
+    GYRO_ROUTE_13_SAMPLE(11.4370f, 20.46f),
+    GYRO_ROUTE_13_SAMPLE(11.8442f, 24.20f),
+    GYRO_ROUTE_13_SAMPLE(12.2425f, 27.10f),
+    GYRO_ROUTE_13_SAMPLE(12.6584f, 23.09f),
+    GYRO_ROUTE_13_SAMPLE(13.0506f, 13.99f),
+    GYRO_ROUTE_13_SAMPLE(13.4781f, 2.93f),
+    GYRO_ROUTE_13_SAMPLE(13.8982f, -8.19f),
+    GYRO_ROUTE_13_SAMPLE(14.2985f, -18.44f),
+    GYRO_ROUTE_13_SAMPLE(14.7065f, -19.28f),
+    GYRO_ROUTE_13_SAMPLE(15.1188f, -9.73f),
+    GYRO_ROUTE_13_SAMPLE(15.5290f, 4.00f),
+    GYRO_ROUTE_13_SAMPLE(15.9449f, 9.08f),
+    GYRO_ROUTE_13_SAMPLE(16.3480f, 0.87f),
+    GYRO_ROUTE_13_SAMPLE(16.7480f, -2.19f),
+};
+
+static const subject_2_gyro_route_sample_t subject_2_gyro_route_14[] =
+{
+    GYRO_ROUTE_14_SAMPLE(0.0000f, 0.00f),
+    GYRO_ROUTE_14_SAMPLE(0.4105f, 3.69f),
+    GYRO_ROUTE_14_SAMPLE(0.8235f, 9.91f),
+    GYRO_ROUTE_14_SAMPLE(1.2261f, 15.63f),
+    GYRO_ROUTE_14_SAMPLE(1.6405f, 22.61f),
+    GYRO_ROUTE_14_SAMPLE(2.0386f, 25.30f),
+    GYRO_ROUTE_14_SAMPLE(2.4591f, 22.85f),
+    GYRO_ROUTE_14_SAMPLE(2.8584f, 19.16f),
+    GYRO_ROUTE_14_SAMPLE(3.2695f, 15.32f),
+    GYRO_ROUTE_14_SAMPLE(3.6721f, 11.19f),
+    GYRO_ROUTE_14_SAMPLE(4.0880f, 6.82f),
+    GYRO_ROUTE_14_SAMPLE(4.5099f, 1.65f),
+    GYRO_ROUTE_14_SAMPLE(4.9100f, -4.54f),
+    GYRO_ROUTE_14_SAMPLE(5.3330f, -10.75f),
+    GYRO_ROUTE_14_SAMPLE(5.7430f, -17.70f),
+    GYRO_ROUTE_14_SAMPLE(6.1608f, -25.10f),
+    GYRO_ROUTE_14_SAMPLE(6.5768f, -31.33f),
+    GYRO_ROUTE_14_SAMPLE(6.9817f, -35.09f),
+    GYRO_ROUTE_14_SAMPLE(7.3840f, -35.10f),
+    GYRO_ROUTE_14_SAMPLE(7.7974f, -30.12f),
+    GYRO_ROUTE_14_SAMPLE(8.2046f, -23.16f),
+    GYRO_ROUTE_14_SAMPLE(8.6157f, -15.92f),
+    GYRO_ROUTE_14_SAMPLE(9.0334f, -8.50f),
+    GYRO_ROUTE_14_SAMPLE(9.4545f, -1.33f),
+    GYRO_ROUTE_14_SAMPLE(9.8656f, 6.06f),
+    GYRO_ROUTE_14_SAMPLE(10.2815f, 13.13f),
+    GYRO_ROUTE_14_SAMPLE(10.7087f, 22.75f),
+    GYRO_ROUTE_14_SAMPLE(11.1158f, 29.26f),
+    GYRO_ROUTE_14_SAMPLE(11.5377f, 32.13f),
+    GYRO_ROUTE_14_SAMPLE(11.9511f, 30.06f),
+    GYRO_ROUTE_14_SAMPLE(12.3542f, 27.34f),
+    GYRO_ROUTE_14_SAMPLE(12.7656f, 22.45f),
+    GYRO_ROUTE_14_SAMPLE(13.1673f, 14.35f),
+    GYRO_ROUTE_14_SAMPLE(13.5773f, 8.65f),
+    GYRO_ROUTE_14_SAMPLE(14.0002f, 2.90f),
+    GYRO_ROUTE_14_SAMPLE(14.4102f, -4.98f),
+    GYRO_ROUTE_14_SAMPLE(14.8332f, -11.40f),
+    GYRO_ROUTE_14_SAMPLE(15.2358f, -16.90f),
+    GYRO_ROUTE_14_SAMPLE(15.6469f, -22.77f),
+    GYRO_ROUTE_14_SAMPLE(16.0592f, -23.51f),
+    GYRO_ROUTE_14_SAMPLE(16.4830f, -17.71f),
+    GYRO_ROUTE_14_SAMPLE(16.8953f, -10.98f),
+    GYRO_ROUTE_14_SAMPLE(17.2973f, -4.45f),
+    GYRO_ROUTE_14_SAMPLE(17.7074f, 1.23f),
+};
+
+void subject_2_gyro_route_start(uint8 route_number, uint8 reverse)
+{
+    (void)route_number;
+    (void)reverse;
+}
+
+void subject_2_gyro_route_stop(const char *reason)
+{
+    (void)reason;
+}
+
+void subject_2_gyro_route_task(void)
+{
+}
+
+uint8 subject_2_gyro_route_is_active(void)
+{
+    return 0U;
+}
