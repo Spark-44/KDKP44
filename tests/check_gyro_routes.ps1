@@ -48,6 +48,32 @@ $route14 = @(Read-Profile 'GYRO_ROUTE_14_SAMPLE')
 if($route13.Count -ne 42) { throw "Route 13 sample count is $($route13.Count), expected 42." }
 if($route14.Count -ne 44) { throw "Route 14 sample count is $($route14.Count), expected 44." }
 
+$expectedRoute13Yaw = @(
+    0.00, -7.67, -15.79, -18.34, -16.80, -13.78, -10.14, -5.68, 2.18, 12.35,
+    20.13, 28.09, 34.53, 33.14, 26.88, 18.57, 7.50, -3.64, -14.26, -23.22,
+    -28.39, -30.44, -29.80, -25.53, -17.70, -8.11, 2.34, 12.20, 20.46, 24.20,
+    27.10, 23.09, 13.99, 2.93, -8.19, -18.44, -19.28, -9.73, 4.00, 9.08,
+    0.87, -2.19
+)
+$expectedRoute14Yaw = @(
+    0.00, 3.69, 9.91, 15.63, 22.61, 25.30, 22.85, 19.16, 15.32, 11.19,
+    6.82, 1.65, -4.54, -10.75, -17.70, -25.10, -31.33, -35.09, -35.10, -30.12,
+    -23.16, -15.92, -8.50, -1.33, 6.06, 13.13, 22.75, 29.26, 32.13, 30.06,
+    27.34, 22.45, 14.35, 8.65, 2.90, -4.98, -11.40, -16.90, -22.77, -23.51,
+    -17.71, -10.98, -4.45, 1.23
+)
+
+foreach($yawCheck in @(@($route13, $expectedRoute13Yaw, 'Route 13'), @($route14, $expectedRoute14Yaw, 'Route 14'))) {
+    $profile = @($yawCheck[0])
+    $expectedYaw = @($yawCheck[1])
+    $name = [string]$yawCheck[2]
+    for($i = 0; $i -lt $expectedYaw.Count; $i++) {
+        if([math]::Abs($profile[$i].Yaw - $expectedYaw[$i]) -gt 0.001) {
+            throw "$name yaw mismatch at sample ${i}: $($profile[$i].Yaw), expected $($expectedYaw[$i])."
+        }
+    }
+}
+
 foreach($entry in @(@($route13, 16.75, 'Route 13'), @($route14, 17.71, 'Route 14'))) {
     $profile = @($entry[0])
     $expectedEnd = [double]$entry[1]
@@ -73,6 +99,7 @@ foreach($pattern in @(
     '#define\s+SUBJECT_2_GYRO_ROUTE_MAX_ENCODER_DELTA\s+1000',
     '#define\s+SUBJECT_2_GYRO_ROUTE_STALL_MS\s+\(3000U\)',
     '#define\s+SUBJECT_2_GYRO_ROUTE_SLOWDOWN_M\s+\(1\.0f\)',
+    '#define\s+SUBJECT_2_GYRO_ROUTE_STEER_LIMIT_DEG\s+\(25\.0f\)',
     'static\s+float\s+subject_2_gyro_route_interpolate_yaw\s*\(',
     'calculate_delta\s*\(',
     'ONE_TICK_DISTANCE',

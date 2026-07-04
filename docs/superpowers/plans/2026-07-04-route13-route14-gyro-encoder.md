@@ -152,7 +152,7 @@ Each task update must:
 1. accumulate absolute valid encoder delta times `ONE_TICK_DISTANCE`;
 2. update the progress timestamp after at least 0.002 m;
 3. interpolate relative yaw and add the captured start yaw;
-4. run the existing encoder-yaw PID shape (KP 0.80, KI 0.20, KD 0.04), integral clamp 20 degrees, steering clamp 8 degrees, and per-update steering rate clamp 0.5 degrees;
+4. run the encoder-yaw PID shape (KP 0.80, KI 0.20, KD 0.04), integral clamp 20 degrees, steering clamp 25 degrees, and per-update steering rate clamp 0.5 degrees; the 25-degree clamp covers the extracted route-13 peak theoretical demand of approximately 22.9 degrees;
 5. negate steering for reverse drive;
 6. command `out_v_l`, `out_v_r`, and `out_servo` using the existing `GUANDAO_SPEED_TO_MPS` convention;
 7. slow over the final 1.0 m, finish at terminal distance, and stall after 3000 ms without progress.
