@@ -3,6 +3,7 @@
 #include "zf_common_headfile.h"
 #include "display.h"
 #include "rear_motor/rear_motor.h"
+#include "subject_2_gyro_route.h"
 
 guandao_state INS;                               //0 = route_setting_choice
 guandao_state passage;                    //1 = route_setting_choice
@@ -3031,6 +3032,7 @@ void portion2_record_task(void)
 
 void portion2_run_select_route(uint8 route_id)
 {
+    subject_2_gyro_route_stop("RECORDED_ROUTE");
     portion2_run_reject_reason = 0;
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;
@@ -3057,6 +3059,7 @@ void portion2_run_select_route(uint8 route_id)
 
 void portion2_run_select_reverse_route(uint8 route_id)
 {
+    subject_2_gyro_route_stop("RECORDED_ROUTE");
     portion2_run_reject_reason = 0;
     portion2_run_reverse = 0;
     portion2_run_drive_reverse = 0;

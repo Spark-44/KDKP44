@@ -96,4 +96,37 @@ if($source -notmatch 'speed_mps\s*=\s*subject_2_gyro_route_state\.reverse\s*\?\s
     throw 'Runtime speed sign must follow the reverse flag.'
 }
 
+$main = Get-Content -Raw (Join-Path $root 'user\cpu0_main.c')
+$guandao = Get-Content -Raw (Join-Path $root 'code\guandao.c')
+$guandaoHeader = Get-Content -Raw (Join-Path $root 'code\guandao.h')
+$fixed = Get-Content -Raw (Join-Path $root 'code\subject_2_fixed_action.c')
+
+foreach($pattern in @(
+    '#include\s+"subject_2_gyro_route\.h"',
+    "data\s*==\s*'X'\s*\|\|\s*data\s*==\s*'x'[\s\S]*?subject_2_gyro_route_start\s*\(\s*SUBJECT_2_GYRO_ROUTE_13\s*,\s*1U\s*\)",
+    "data\s*==\s*'y'[\s\S]*?subject_2_gyro_route_start\s*\(\s*SUBJECT_2_GYRO_ROUTE_14\s*,\s*0U\s*\)",
+    "data\s*==\s*'Y'[\s\S]*?subject_2_gyro_route_start\s*\(\s*SUBJECT_2_GYRO_ROUTE_14\s*,\s*1U\s*\)",
+    "data\s*==\s*'S'[\s\S]*?subject_2_gyro_route_stop\s*\(\s*`"COMMAND`"\s*\)",
+    'subject_2_gyro_route_is_active\s*\(\s*\)[\s\S]*?subject_2_gyro_route_task\s*\(\s*\)',
+    'void\s+portion2_run_select_route[\s\S]*?subject_2_gyro_route_stop\s*\(\s*"RECORDED_ROUTE"\s*\)',
+    'void\s+voice_drive_action_start[\s\S]*?subject_2_gyro_route_stop\s*\(\s*"FIXED_ACTION"\s*\)'
+)) {
+    if(($main + "`n" + $guandao + "`n" + $fixed) -notmatch $pattern) {
+        throw "Missing gyro-route integration: $pattern"
+    }
+}
+
+if($main -notmatch "data\s*>=\s*'U'\s*&&\s*data\s*<=\s*'V'[\s\S]*?portion2_run_select_route\s*\(\s*data\s*-\s*'U'\s*\+\s*PORTION2_ROUTE_RETURN_5\s*\)") {
+    throw 'Existing uppercase route 10/11 mapping changed.'
+}
+if($main -notmatch "data\s*>=\s*'u'\s*&&\s*data\s*<=\s*'w'[\s\S]*?portion2_run_select_route\s*\(\s*data\s*-\s*'u'\s*\+\s*PORTION2_ROUTE_RETURN_5\s*\)") {
+    throw 'Existing lowercase route 10/11/12 mapping changed.'
+}
+if($main -notmatch "data\s*==\s*'W'[\s\S]*?portion2_run_select_route\s*\(\s*PORTION2_ROUTE_SNAKE\s*\)") {
+    throw 'Existing uppercase route 12 mapping changed.'
+}
+if($guandaoHeader -notmatch '#define\s+PORTION2_ROUTE_COUNT\s+12') {
+    throw 'Compiled gyro routes must not alter recorded-route Flash layout.'
+}
+
 Write-Output 'Gyroscope route 13/14 checks passed.'

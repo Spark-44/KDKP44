@@ -5,6 +5,7 @@
 #include "buzzer_action.h"
 #include "rear_motor/rear_motor.h"
 #include "guandao.h"
+#include "subject_2_gyro_route.h"
 #include "display.h"
 #include <stdio.h>
 #pragma section all "cpu0_dsram"
@@ -459,6 +460,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         voice_drive_action_stop();
+        subject_2_gyro_route_stop("COMMAND");
         portion2_run_stop();
         out_v_l = 0.0f;
         out_v_r = 0.0f;
@@ -604,6 +606,42 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M);
+    }
+    else if(data == 'X' || data == 'x')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        voice_drive_action_stop();
+        portion2_run_stop();
+        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_13, 1U);
+    }
+    else if(data == 'y')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        voice_drive_action_stop();
+        portion2_run_stop();
+        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_14, 0U);
+    }
+    else if(data == 'Y')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        voice_drive_action_stop();
+        portion2_run_stop();
+        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_14, 1U);
     }
     else
     {
@@ -827,7 +865,11 @@ int core0_main(void)
                 Portion2_Serial_Command_Update();
                 Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
-                if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
+                if(subject_2_gyro_route_is_active())
+                {
+                    subject_2_gyro_route_task();
+                }
+                else if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
                 {
                     voice_drive_action_task();
                 }

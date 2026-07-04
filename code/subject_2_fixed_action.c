@@ -1,4 +1,5 @@
 #include "subject_2_fixed_action.h"
+#include "subject_2_gyro_route.h"
 #include "zf_common_headfile.h"
 #include "rear_motor/rear_motor.h"
 
@@ -512,6 +513,7 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
 {
     uint8 uses_straight_yaw;
 
+    subject_2_gyro_route_stop("FIXED_ACTION");
     voice_drive_action_stop();
     subject_2_fixed_action_state.mode = mode;
     subject_2_fixed_action_state.start_ms = system_getval_ms();
