@@ -69,4 +69,31 @@ if($source -match 'typedef\s+struct\s*\{[^}]*(?:\bfloat\s+x\b|\bfloat\s+y\b)[^}]
     throw 'Runtime profile must not store x/y.'
 }
 
+foreach($pattern in @(
+    '#define\s+SUBJECT_2_GYRO_ROUTE_MAX_ENCODER_DELTA\s+1000',
+    '#define\s+SUBJECT_2_GYRO_ROUTE_STALL_MS\s+\(3000U\)',
+    '#define\s+SUBJECT_2_GYRO_ROUTE_SLOWDOWN_M\s+\(1\.0f\)',
+    'static\s+float\s+subject_2_gyro_route_interpolate_yaw\s*\(',
+    'calculate_delta\s*\(',
+    'ONE_TICK_DISTANCE',
+    'subject_2_gyro_route_state\.distance_m\s*\+=\s*distance_step',
+    'subject_2_gyro_route_state\.target_yaw\s*=\s*subject_2_gyro_route_normalize_angle',
+    'if\s*\(\s*subject_2_gyro_route_state\.reverse\s*\)[\s\S]*?steer_command\s*=\s*-steer_command',
+    'subject_2_gyro_route_finish\s*\(\s*"DISTANCE"\s*\)',
+    'subject_2_gyro_route_finish\s*\(\s*"STALL"\s*\)',
+    'rear_motor_set_target_mps\s*\(\s*0\.0f\s*\)',
+    'uart_write_string\s*\(\s*DEBUG_UART_INDEX\s*,\s*line\s*\)'
+)) {
+    if($source -notmatch $pattern) {
+        throw "Missing gyro-route control behavior: $pattern"
+    }
+}
+
+if($source -notmatch 'if\s*\(\s*route_number\s*==\s*SUBJECT_2_GYRO_ROUTE_13\s*&&\s*!reverse\s*\)') {
+    throw 'Route 13 must reject forward drive.'
+}
+if($source -notmatch 'speed_mps\s*=\s*subject_2_gyro_route_state\.reverse\s*\?\s*-speed_mps\s*:\s*speed_mps') {
+    throw 'Runtime speed sign must follow the reverse flag.'
+}
+
 Write-Output 'Gyroscope route 13/14 checks passed.'
