@@ -3,7 +3,7 @@
 #include "screen.h"
 #include "offline_voice.h"
 #include "buzzer_action.h"
-#include "rear_motor/rear_motor.h"
+#include "rear_motor/rear_motor.h"li
 #include "guandao.h"
 #include "subject_2_gyro_route.h"
 #include "display.h"
@@ -102,7 +102,7 @@ static const dot_matrix_pattern_t portion2_aux_pattern_table[6] =
     DOT_MATRIX_PATTERN_FOG_LIGHT
 };
 
-#define PORTION2_ALL_LIGHT_PIN P33_4
+#define PORTION2_ALL_LIGHT_PIN P22_0
 
 static uint8 portion2_aux_mode = 0;
 static uint32 portion2_aux_start_ms = 0;
@@ -832,6 +832,7 @@ int core0_main(void)
    pit_ms_init(CCU61_CH1, 1);
 
     cpu_wait_event_ready();                                                          
+
 
     Flash_Main_Read();                                                                  
     portion2_record_mark_loaded_routes_saved();
