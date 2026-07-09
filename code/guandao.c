@@ -1241,8 +1241,8 @@ void update_state(guandao_state * state , Encoder_t * ecd)
         angle_plan(&state->current_state.theta);
     }
 
-    state->current_state.x+=delta_real_center*sinf(state->current_state.theta/180.0f*M_PI);
-    state->current_state.y+=delta_real_center*cosf(state->current_state.theta/180.0f*M_PI);
+    state->current_state.x-=delta_real_center*sinf(state->current_state.theta/180.0f*M_PI);
+    state->current_state.y-=delta_real_center*cosf(state->current_state.theta/180.0f*M_PI);
 
 }
 
