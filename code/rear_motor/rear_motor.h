@@ -10,11 +10,15 @@
 #define REAR_ENCODER_PPR             1024
 #define REAR_EFFECTIVE_PPR           ((float)REAR_ENCODER_PPR * REAR_GEAR_RATIO)
 #define REAR_WHEEL_CIRCUM_M          (3.14159265358979323846f * REAR_WHEEL_DIAMETER_M)
+#define REAR_ODOMETER_PULSES_PER_WHEEL_REV  2122.0f
+#define REAR_DISTANCE_PER_PULSE_M    (REAR_WHEEL_CIRCUM_M / REAR_ODOMETER_PULSES_PER_WHEEL_REV)
+#define REAR_ENCODER_FEEDBACK_DIRECTION (-1)
+#define REAR_SPEED_CALIBRATION_FACTOR 0.7557f
 
-#define REAR_KP                 10.0f
-#define REAR_KI                 0.3f
-#define REAR_KD                 0.8f
-#define REAR_FF_GAIN            13.0f
+#define REAR_KP                 4.0f
+#define REAR_KI                 0.1f
+#define REAR_KD                 0.2f
+#define REAR_FF_GAIN            6.0f
 
 // #define REAR_KP              8.0f
 // #define REAR_KI              0.5f
@@ -26,10 +30,11 @@
 // #define REAR_KD              0.3f
 // #define REAR_FF_GAIN         9.0f
 #define REAR_PWM_HARD_LIMIT     9500
-#define REAR_PWM_RATE_LIMIT     1000
+#define REAR_PWM_RATE_LIMIT     400
 #define REAR_INTEGRAL_LIMIT     2000.0f
 #define REAR_INTEGRAL_THRESHOLD 60.0f
 #define REAR_ENCODER_DELTA_ABS_MAX 300
+#define REAR_SPEED_LIMIT_SOFT_ZONE_MPS 0.20f
 
 #define REAR_SPEED_MAX_MPS      5.0f
 #define REAR_SPEED_MIN_MPS      -5.0f
@@ -41,6 +46,10 @@ void rear_motor_stop(void);
 void rear_motor_set_full_power(void);
 
 void rear_motor_set_target_mps(float target_mps);
+
+void rear_motor_set_speed_limit_mps(float limit_mps);
+
+void rear_motor_clear_speed_limit(void);
 
 void rear_motor_encoder_update_10ms(void);
 
@@ -55,5 +64,11 @@ int16  rear_motor_get_pwm(void);
 int16  rear_motor_get_encoder_10ms(void);
 
 int32  rear_motor_get_encoder_100ms(void);
+
+int32  rear_motor_get_total_encoder_pulses(void);
+
+float  rear_motor_get_total_distance_m(void);
+
+void   rear_motor_clear_odometer(void);
 
 #endif /* CODE_REAR_MOTOR_H_ */

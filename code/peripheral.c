@@ -211,7 +211,7 @@ void Encoder_count_init(Encoder_t *count)
 
 void Encoder_Init(void)
 {
-    encoder_quad_init(ENCODER_QUADDEC, ENCODER_QUADDEC_A, ENCODER_QUADDEC_B);
+    encoder_dir_init(ENCODER_QUADDEC, ENCODER_QUADDEC_A, ENCODER_QUADDEC_B);
 
 }
 

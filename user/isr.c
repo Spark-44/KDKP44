@@ -5,6 +5,7 @@
 #include "rear_motor/rear_motor.h"
 #include "screen.h"
 #include "offline_voice.h"
+#include "zf_device_uart_receiver.h"
 
 IFX_INTERRUPT(cc60_pit_ch1_isr, 0, CCU6_0_CH1_ISR_PRIORITY)
 {
@@ -205,7 +206,7 @@ IFX_INTERRUPT(exti_ch3_ch7_isr, 0, EXTI_CH3_CH7_INT_PRIO)
     if(exti_flag_get(ERU_CH7_REQ11_P20_9))
     {
         exti_flag_clear(ERU_CH7_REQ11_P20_9);
-        dot_matrix_screen_scan();
+//        dot_matrix_screen_scan();
     }
 }
 
@@ -243,8 +244,7 @@ IFX_INTERRUPT(uart1_tx_isr, 0, UART1_TX_INT_PRIO)
 IFX_INTERRUPT(uart1_rx_isr, 0, UART1_RX_INT_PRIO)
 {
     interrupt_global_enable(0);                     
-    tld7002_callback();
-    camera_uart_handler_1();                        
+    offline_voice_uart_rx_handler();
 }
 
 IFX_INTERRUPT(uart2_tx_isr, 0, UART2_TX_INT_PRIO)
@@ -256,8 +256,8 @@ IFX_INTERRUPT(uart2_tx_isr, 0, UART2_TX_INT_PRIO)
 IFX_INTERRUPT(uart2_rx_isr, 0, UART2_RX_INT_PRIO)
 {
     interrupt_global_enable(0);                     
-    offline_voice_uart_rx_handler();
 
+    uart_receiver_handler();
 }
 
 IFX_INTERRUPT(uart3_tx_isr, 0, UART3_TX_INT_PRIO)
@@ -288,6 +288,7 @@ IFX_INTERRUPT(uart2_er_isr, 0, UART2_ER_INT_PRIO)
 {
     interrupt_global_enable(0);                     
     IfxAsclin_Asc_isrError(&uart2_handle);
+    uart_receiver_note_uart_error();
 }
 IFX_INTERRUPT(uart3_er_isr, 0, UART3_ER_INT_PRIO)
 {

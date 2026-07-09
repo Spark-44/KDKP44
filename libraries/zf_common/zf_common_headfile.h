@@ -111,6 +111,7 @@
 #include "zf_device_wireless_uart.h"
 #include "zf_device_dot_matrix_screen.h"
 #include "zf_device_tld7002.h"
+#include "zf_device_uart_receiver.h"
 
 //===================================================外接设备驱动层===================================================
 
@@ -137,6 +138,7 @@
 #include "servo.h"
 #include "screen.h"
 #include "voice_drive_action.h"
+#include "remote_control.h"
 //=====================================================用户层======================================================
 
 #endif

@@ -9,6 +9,7 @@ static int16  current_pwm     = 0;
 static int16  encoder_10ms    = 0;
 static int32  encoder_100ms   = 0;
 static int32  encoder_100ms_last = 0;
+static int32  total_encoder_pulses = 0;
 static volatile uint32 encoder_sample_count = 0;
 static uint32 last_encoder_sample_count = 0;
 static uint8  encoder_div = 0;
@@ -18,6 +19,7 @@ static uint8  encoder_first_read = 1;
 static float  integral    = 0.0f;
 static float  last_error  = 0.0f;
 static int    last_pwm    = 0;
+static float  speed_limit_mps = 0.0f;
 
 static void rear_motor_set_pwm(int16 pwm)
 {
@@ -60,6 +62,7 @@ void rear_motor_init(void)
     encoder_10ms  = 0;
     encoder_100ms = 0;
     encoder_100ms_last = 0;
+    total_encoder_pulses = 0;
     encoder_sample_count = 0;
     last_encoder_sample_count = 0;
     encoder_div = 0;
@@ -68,6 +71,7 @@ void rear_motor_init(void)
     integral    = 0.0f;
     last_error  = 0.0f;
     last_pwm    = 0;
+    speed_limit_mps = 0.0f;
 }
 
 void rear_motor_stop(void)
@@ -76,6 +80,7 @@ void rear_motor_stop(void)
     integral    = 0.0f;
     last_error  = 0.0f;
     last_pwm    = 0;
+    speed_limit_mps = 0.0f;
     encoder_100ms = 0;
     encoder_100ms_last = 0;
     encoder_div = 0;
@@ -117,6 +122,20 @@ void rear_motor_set_target_mps(float mps)
     }
 }
 
+void rear_motor_set_speed_limit_mps(float limit_mps)
+{
+    if(limit_mps < 0.0f)
+    {
+        limit_mps = -limit_mps;
+    }
+    speed_limit_mps = limit_mps;
+}
+
+void rear_motor_clear_speed_limit(void)
+{
+    speed_limit_mps = 0.0f;
+}
+
 void rear_motor_encoder_update_10ms(void)
 {
     int16 current_count = encoder_get_count(TIM2_ENCODER);
@@ -129,7 +148,7 @@ void rear_motor_encoder_update_10ms(void)
     }
     else
     {
-        encoder_10ms = (int16)calculate_delta(current_count, last_encoder_count);
+        encoder_10ms = (int16)((int32)REAR_ENCODER_FEEDBACK_DIRECTION * (int32)calculate_delta(current_count, last_encoder_count));
         if(encoder_10ms > REAR_ENCODER_DELTA_ABS_MAX || encoder_10ms < -REAR_ENCODER_DELTA_ABS_MAX)
         {
             encoder_10ms = 0;
@@ -138,6 +157,7 @@ void rear_motor_encoder_update_10ms(void)
     }
 
     encoder_sample_count++;
+    total_encoder_pulses += (int32)encoder_10ms;
 }
 
 void rear_motor_pid_update_100ms(void)
@@ -148,7 +168,6 @@ void rear_motor_pid_update_100ms(void)
     }
 
     last_encoder_sample_count = encoder_sample_count;
-    actual_mps = (float)((int32)encoder_10ms * 10) / REAR_EFFECTIVE_PPR * REAR_WHEEL_CIRCUM_M / 0.1f;
     encoder_100ms += (int32)encoder_10ms;
     encoder_div++;
 
@@ -159,6 +178,7 @@ void rear_motor_pid_update_100ms(void)
 
     encoder_div = 0;
     encoder_100ms_last = encoder_100ms;
+    actual_mps = (float)encoder_100ms * REAR_DISTANCE_PER_PULSE_M * REAR_SPEED_CALIBRATION_FACTOR / 0.1f;
 
     if(target_mps == 0.0f)
     {
@@ -167,7 +187,7 @@ void rear_motor_pid_update_100ms(void)
         return;
     }
 
-    float target_pulses = target_mps * REAR_EFFECTIVE_PPR / REAR_WHEEL_CIRCUM_M * 0.1f;
+    float target_pulses = target_mps * 0.1f / REAR_DISTANCE_PER_PULSE_M;
     float error = target_pulses - (float)encoder_100ms;
 
     if(error < REAR_INTEGRAL_THRESHOLD && error > -REAR_INTEGRAL_THRESHOLD)
@@ -181,8 +201,61 @@ void rear_motor_pid_update_100ms(void)
     last_error = error;
 
     float ff     = target_pulses * REAR_FF_GAIN;
+    float speed_limit_scale = 1.0f;
+    if(speed_limit_mps > 0.0f)
+    {
+        if(target_mps > 0.0f && actual_mps >= speed_limit_mps)
+        {
+            ff = 0.0f;
+        }
+        if(target_mps < 0.0f && actual_mps <= -speed_limit_mps)
+        {
+            ff = 0.0f;
+        }
+
+        {
+            float speed_abs = actual_mps;
+            if(speed_abs < 0.0f)
+            {
+                speed_abs = -speed_abs;
+            }
+
+            if(speed_abs > (speed_limit_mps - REAR_SPEED_LIMIT_SOFT_ZONE_MPS))
+            {
+                speed_limit_scale = (speed_limit_mps - speed_abs) / REAR_SPEED_LIMIT_SOFT_ZONE_MPS;
+                if(speed_limit_scale < 0.0f)
+                {
+                    speed_limit_scale = 0.0f;
+                }
+                if(speed_limit_scale > 1.0f)
+                {
+                    speed_limit_scale = 1.0f;
+                }
+            }
+        }
+    }
     float pid    = REAR_KP * error + REAR_KI * integral + REAR_KD * derivative;
     float pwm_f  = ff + pid;
+
+    if(speed_limit_mps > 0.0f)
+    {
+        if(target_mps > 0.0f && actual_mps >= speed_limit_mps && pwm_f > 0.0f)
+        {
+            pwm_f = 0.0f;
+        }
+        else if(target_mps > 0.0f && pwm_f > 0.0f)
+        {
+            pwm_f *= speed_limit_scale;
+        }
+        if(target_mps < 0.0f && actual_mps <= -speed_limit_mps && pwm_f < 0.0f)
+        {
+            pwm_f = 0.0f;
+        }
+        else if(target_mps < 0.0f && pwm_f < 0.0f)
+        {
+            pwm_f *= speed_limit_scale;
+        }
+    }
 
     encoder_100ms = 0;
     rear_motor_set_pwm((int16)pwm_f);
@@ -199,3 +272,15 @@ int16  rear_motor_get_pwm(void)             { return current_pwm; }
 int16  rear_motor_get_encoder_10ms(void)    { return encoder_10ms; }
 
 int32  rear_motor_get_encoder_100ms(void)   { return encoder_100ms_last; }
+
+int32  rear_motor_get_total_encoder_pulses(void) { return total_encoder_pulses; }
+
+float  rear_motor_get_total_distance_m(void)
+{
+    return (float)total_encoder_pulses * REAR_DISTANCE_PER_PULSE_M;
+}
+
+void   rear_motor_clear_odometer(void)
+{
+    total_encoder_pulses = 0;
+}

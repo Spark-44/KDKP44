@@ -77,6 +77,7 @@ typedef void (*callback_function)(void);
 extern wireless_type_enum wireless_type;
 extern callback_function wireless_module_uart_handler;                          // 无线串口接收中断函数指针，根据初始化时设置的函数进行跳转
 extern callback_function wireless_module_spi_handler;                           // WIFI SPI GPIO中断函数指针，根据初始化时设置的函数进行跳转
+extern callback_function uart_receiver_handler;                                 // SBUS 串口接收机中断函数指针，根据初始化时设置的函数进行跳转
 
 extern camera_type_enum    camera_type                ;                         // 摄像头类型变量
 

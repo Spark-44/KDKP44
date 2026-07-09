@@ -42,7 +42,7 @@ static void offline_voice_debug_stats(void)
 
         offline_voice_last_stat_ms = now_ms;
         len = sprintf(line,
-                      "[VOICE-UART2] bytes=%lu valid=%lu badEnd=%lu badChecksum=%lu badMsg=%lu last=0x%02X\r\n",
+                      "[VOICE-UART1] bytes=%lu valid=%lu badEnd=%lu badChecksum=%lu badMsg=%lu last=0x%02X\r\n",
                       (unsigned long)offline_voice_stats.bytes_total,
                       (unsigned long)offline_voice_stats.valid_frames,
                       (unsigned long)offline_voice_stats.bad_tail,
@@ -106,7 +106,7 @@ static void offline_voice_handle_frame(void)
 
     offline_voice_send_response(cmd_id);
 
-    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART2] CMD_ID=0x");
+    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART1] CMD_ID=0x");
     offline_voice_debug_hex(cmd_id);
     uart_write_string(DEBUG_UART_INDEX, "\r\n");
 
@@ -129,7 +129,7 @@ void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data)
               OFFLINE_VOICE_UART_TX_PIN,
               OFFLINE_VOICE_UART_RX_PIN);
     uart_rx_interrupt(OFFLINE_VOICE_UART_INDEX, 1);
-    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART2] init 9600 TX=P10.5 RX=P10.6\r\n");
+    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART1] init 9600 TX=P11.12 RX=P11.10\r\n");
 }
 
 void offline_voice_poll(void)

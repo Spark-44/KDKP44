@@ -20,7 +20,8 @@
 #define ANGLE_DEFAULT_KI    4.0f
 #define ANGLE_DEFAULT_KD    10.0f
 #define ANGLE_OUTPUT_MAX    10000
-#define ANGLE_DEAD_BAND     0.1f
+#define ANGLE_DEAD_BAND     0.2f
+#define ANGLE_INTEGRAL_MAX  1000.0f
 
 typedef struct {
     PID_TypeDef pid;          

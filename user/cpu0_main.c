@@ -3,17 +3,18 @@
 #include "screen.h"
 #include "offline_voice.h"
 #include "buzzer_action.h"
-#include "rear_motor/rear_motor.h"li
+#include "rear_motor/rear_motor.h"
 #include "guandao.h"
 #include "subject_2_gyro_route.h"
 #include "display.h"
+#include "serial_menu.h"
 #include <stdio.h>
 #pragma section all "cpu0_dsram"
 
 extern int num;
 static uint8 voice_inited = 0;
 
-#define PORTION2_DRIVE_SPEED_MIN_MPS  (1.5f)
+#define PORTION2_DRIVE_SPEED_MIN_MPS  (1.0f)
 #define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
 #define PORTION2_DRIVE_SPEED_MAX_MPS  (5.0f)
 
@@ -22,6 +23,9 @@ static uint8 portion2_drive_full_power = 0;
 static uint8 portion2_drive_active = 0;
 static uint32 portion2_drive_k4_start_ms = 0;
 static uint8 portion2_drive_k4_wait_release = 0;
+
+#define REAR_MOTOR_TELEMETRY_PERIOD_MS (200U)
+#define RECORD_IDLE_ENCODER_DIAG_PERIOD_MS (10U)
 
 static void Guandao_Rear_Motor_Update(void)
 {
@@ -85,6 +89,77 @@ static void Boot_Reset_Print(void)
     if(len > 0)
     {
         Serial_Debug_Write(line);
+    }
+}
+
+static void Rear_Motor_Serial_Telemetry_Update(void)
+{
+    static uint32 last_report_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if((uint32)(now_ms - last_report_ms) < REAR_MOTOR_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
+
+    last_report_ms = now_ms;
+    {
+        char line[160];
+        int len = sprintf(line,
+                          "[REAR-SPEED] target=%.2f actual=%.2f speed=%.3fmps pwm=%d enc10=%d enc100=%ld totalPulse=%ld dist=%.3f\r\n",
+                          rear_motor_get_target_mps(),
+                          rear_motor_get_speed_mps(),
+                          rear_motor_get_speed_mps(),
+                          (int)rear_motor_get_pwm(),
+                          (int)rear_motor_get_encoder_10ms(),
+                          (long)rear_motor_get_encoder_100ms(),
+                          (long)rear_motor_get_total_encoder_pulses(),
+                          rear_motor_get_total_distance_m());
+        if(len > 0)
+        {
+            uart_write_string(DEBUG_UART_INDEX, line);
+        }
+    }
+}
+
+static void Record_Idle_Encoder_Diag_Update(void)
+{
+    static uint32 last_diag_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if(main_mode != Guandao_Portion2_Recode)
+    {
+        return;
+    }
+    if(remote_control_is_active())
+    {
+        return;
+    }
+    if(conrtol_mode != IDLE)
+    {
+        return;
+    }
+    if((uint32)(now_ms - last_diag_ms) < RECORD_IDLE_ENCODER_DIAG_PERIOD_MS)
+    {
+        return;
+    }
+
+    last_diag_ms = now_ms;
+    rear_motor_encoder_update_10ms();
+    {
+        char line[128];
+        int len = sprintf(line,
+                          "[ENC-DIAG] enc10=%d enc100=%ld totalPulse=%ld dist=%.3f actual=%.2f pwm=%d\r\n",
+                          (int)rear_motor_get_encoder_10ms(),
+                          (long)rear_motor_get_encoder_100ms(),
+                          (long)rear_motor_get_total_encoder_pulses(),
+                          rear_motor_get_total_distance_m(),
+                          rear_motor_get_speed_mps(),
+                          (int)rear_motor_get_pwm());
+        if(len > 0)
+        {
+            uart_write_string(DEBUG_UART_INDEX, line);
+        }
     }
 }
 
@@ -190,6 +265,34 @@ static void Portion2_Drive_Mode_Enter(void)
     ips200_clear();
 }
 
+static void Portion2_Drive_Encoder_Update_10ms(void)
+{
+    static uint32 last_encoder_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if((uint32)(now_ms - last_encoder_ms) < 10U)
+    {
+        return;
+    }
+
+    last_encoder_ms = now_ms;
+    rear_motor_encoder_update_10ms();
+}
+
+static void Portion2_Drive_Key_Log(const char *key_name)
+{
+    char line[96];
+    int len = sprintf(line,
+                      "[DRIVE-KEY] %s full=%u target=%.2f\r\n",
+                      key_name,
+                      (unsigned int)portion2_drive_full_power,
+                      portion2_drive_target_mps);
+    if(len > 0)
+    {
+        Serial_Debug_Write(line);
+    }
+}
+
 static uint8 portion2_drive_k4_long_event(void)
 {
     uint32 now_ms = system_getval_ms();
@@ -238,23 +341,16 @@ static void Portion2_Drive_Mode_Key_Handle(void)
             portion2_drive_full_power = 0;
             portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MAX_MPS;
         }
-        else if(portion2_drive_target_mps <= PORTION2_DRIVE_SPEED_MIN_MPS)
-        {
-            portion2_drive_target_mps = 0.0f;
-        }
-        else if(portion2_drive_target_mps <= 2.0f)
-        {
-            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
-        }
         else
         {
             portion2_drive_target_mps -= PORTION2_DRIVE_SPEED_STEP_MPS;
-            if(portion2_drive_target_mps < PORTION2_DRIVE_SPEED_MIN_MPS)
+            if(portion2_drive_target_mps < 0.0f)
             {
-                portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
+                portion2_drive_target_mps = 0.0f;
             }
         }
         Buzzer_check(20);
+        Portion2_Drive_Key_Log("K1");
     }
 
     if(key2_flag)
@@ -263,14 +359,6 @@ static void Portion2_Drive_Mode_Key_Handle(void)
         if(portion2_drive_target_mps >= PORTION2_DRIVE_SPEED_MAX_MPS)
         {
             portion2_drive_full_power = 1;
-        }
-        else if(portion2_drive_target_mps <= 0.0f)
-        {
-            portion2_drive_target_mps = PORTION2_DRIVE_SPEED_MIN_MPS;
-        }
-        else if(portion2_drive_target_mps <= PORTION2_DRIVE_SPEED_MIN_MPS)
-        {
-            portion2_drive_target_mps = 2.0f;
         }
         else
         {
@@ -281,6 +369,7 @@ static void Portion2_Drive_Mode_Key_Handle(void)
             }
         }
         Buzzer_check(20);
+        Portion2_Drive_Key_Log("K2");
     }
 
     if(key3_flag)
@@ -309,6 +398,7 @@ static void Portion2_Drive_Mode_Task(void)
     }
 
     Portion2_Drive_Mode_Key_Handle();
+    Portion2_Drive_Encoder_Update_10ms();
     out_servo = 0.0f;
     if(portion2_drive_full_power)
     {
@@ -450,6 +540,16 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         portion2_serial_toggle_trace();
+    }
+    else if(data == 'L')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        portion2_serial_toggle_route_status_live();
     }
     else if(data == 'S')
     {
@@ -812,6 +912,10 @@ static void Portion2_Serial_Command_Update(void)
     for(uint32 i = 0; i < len; i++)
     {
         data = buffer[i];
+        if(serial_menu_handle_byte(data))
+        {
+            continue;
+        }
         Portion2_Ascii_Command_Execute(data);
     }
 }
@@ -824,9 +928,12 @@ int core0_main(void)
 
     Init_All();                         
     rear_motor_init();                  
-    dot_matrix_screen_init();
+    /* UART1 is assigned to offline voice on P11.12/P11.10.
+       Keep the TLD7002/dot-matrix side disabled; the right-side screen remains in use. */
+//    dot_matrix_screen_init();
     servo_init();
     gpio_init(PORTION2_ALL_LIGHT_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
+    remote_control_init();
     
    pit_ms_init(CCU61_CH0, 1);
    pit_ms_init(CCU61_CH1, 1);
@@ -848,9 +955,11 @@ int core0_main(void)
     while (TRUE)
     {
         gps_serial_diagnostic_task();
-
-        
-
+        remote_control_task();
+        Record_Idle_Encoder_Diag_Update();
+        Rear_Motor_Serial_Telemetry_Update();
+        Portion2_Serial_Command_Update();
+        portion2_serial_route_status_live_task();
         switch(main_mode)                                                    
         {
             case Guandao_Voice:                                             
@@ -863,8 +972,7 @@ int core0_main(void)
                 }
                 Portion2_Run_Mode_Key_Handle();
                 offline_voice_poll();
-                Portion2_Serial_Command_Update();
-                Portion2_Dot_Matrix_Scan_Update();
+//                Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
                 if(subject_2_gyro_route_is_active())
                 {
@@ -884,6 +992,10 @@ int core0_main(void)
             case Guandao_Portion2_Recode:
                 voice_inited = 0;
                 portion2_record_task();
+                if(remote_control_is_active())
+                {
+                    continue;
+                }
                 break;
 
             case Guandao_Drive:

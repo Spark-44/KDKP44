@@ -52,6 +52,7 @@ callback_function   camera_dma_handler_2            = type_default_callback;    
 
 wireless_type_enum  wireless_type                   = NO_WIRELESS;
 callback_function   wireless_module_uart_handler    = type_default_callback;        // 无线串口接收中断函数指针，根据初始化时设置的函数进行跳转
+callback_function   uart_receiver_handler           = type_default_callback;        // SBUS 串口接收机中断函数指针，根据初始化时设置的函数进行跳转
 
 tof_type_enum       tof_type                        = NO_TOF;
 callback_function   tof_module_exti_handler         = type_default_callback;        // ToF 模块 INT 更新中断
@@ -106,7 +107,14 @@ void  set_camera_type (camera_type_enum type_set, callback_function vsync_callba
 void set_wireless_type (wireless_type_enum type_set, callback_function wireless_callback)
 {
     wireless_type = type_set;
-    wireless_module_uart_handler = ((wireless_callback == NULL) ? (type_default_callback) : (wireless_callback));
+    if(RECEIVER_UART == wireless_type)
+    {
+        uart_receiver_handler = ((wireless_callback == NULL) ? (type_default_callback) : (wireless_callback));
+    }
+    else
+    {
+        wireless_module_uart_handler = ((wireless_callback == NULL) ? (type_default_callback) : (wireless_callback));
+    }
 }
 
 //-------------------------------------------------------------------------------------------------------------------
