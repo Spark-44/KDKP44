@@ -944,10 +944,7 @@ int core0_main(void)
 //    while(Steer_Mid_Cheak());
     while (TRUE)
     {
-        gps_serial_diagnostic_task();
         remote_control_task();
-        Record_Idle_Encoder_Diag_Update();
-        Rear_Motor_Serial_Telemetry_Update();
         Portion2_Serial_Command_Update();
         switch(main_mode)                                                    
         {

@@ -12,8 +12,21 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    if($Text -match $Pattern) {
+        throw $Message
+    }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $main = Get-Content (Join-Path $root 'user\cpu0_main.c') -Raw
+$loop = $main.Substring($main.IndexOf('while (TRUE)'))
 
 Assert-Contains $main 'static\s+void\s+Rear_Motor_Serial_Telemetry_Update\s*\(\s*void\s*\)' 'Main loop must define rear motor serial telemetry task.'
 Assert-Contains $main 'REAR_MOTOR_TELEMETRY_PERIOD_MS\s+\(200U\)' 'Rear motor telemetry should be rate-limited to 200ms.'
@@ -24,6 +37,6 @@ Assert-Contains $main 'rear_motor_get_speed_mps\s*\(\s*\)' 'Rear motor telemetry
 Assert-Contains $main 'rear_motor_get_pwm\s*\(\s*\)' 'Rear motor telemetry must read current PWM.'
 Assert-Contains $main 'rear_motor_get_encoder_10ms\s*\(\s*\)' 'Rear motor telemetry must read 10ms encoder delta.'
 Assert-Contains $main 'rear_motor_get_encoder_100ms\s*\(\s*\)' 'Rear motor telemetry must read 100ms encoder delta.'
-Assert-Contains $main 'remote_control_task\s*\(\s*\)\s*;[\s\S]*?Rear_Motor_Serial_Telemetry_Update\s*\(\s*\)\s*;' 'Rear motor telemetry must run after remote task in the main loop.'
+Assert-NotContains $loop 'Rear_Motor_Serial_Telemetry_Update\s*\(\s*\)\s*;' 'Rear motor telemetry must not auto-refresh serial output from the main loop.'
 
 Write-Host 'Rear motor serial telemetry checks passed.'

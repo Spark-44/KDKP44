@@ -187,7 +187,7 @@ if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?offline_voice_uart_r
 
 foreach($pattern in @(
     'remote_control_init\s*\(\s*\)',
-    'gps_serial_diagnostic_task\s*\(\s*\)\s*;\s*remote_control_task\s*\(\s*\)\s*;',
+    'while\s*\(\s*TRUE\s*\)[\s\S]*?remote_control_task\s*\(\s*\)\s*;',
     'case\s+Guandao_Portion2_Recode\s*:[\s\S]*?portion2_record_task\s*\(\s*\)[\s\S]*?if\s*\(\s*remote_control_is_active\s*\(\s*\)\s*\)[\s\S]*?continue\s*;',
     'case\s+Guandao_Voice\s*:[\s\S]*?offline_voice_poll\s*\(\s*\)',
     'case\s+Guandao_Drive\s*:[\s\S]*?Portion2_Drive_Mode_Task\s*\(\s*\)'
