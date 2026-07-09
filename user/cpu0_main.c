@@ -541,16 +541,6 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         portion2_serial_toggle_trace();
     }
-    else if(data == 'L')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        portion2_serial_toggle_route_status_live();
-    }
     else if(data == 'S')
     {
         reverse_route_pending = 0;
@@ -959,7 +949,6 @@ int core0_main(void)
         Record_Idle_Encoder_Diag_Update();
         Rear_Motor_Serial_Telemetry_Update();
         Portion2_Serial_Command_Update();
-        portion2_serial_route_status_live_task();
         switch(main_mode)                                                    
         {
             case Guandao_Voice:                                             

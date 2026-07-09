@@ -2,13 +2,17 @@
 #include "serial_menu.h"
 #include "display.h"
 #include "guandao.h"
+#include "peripheral.h"
+#include "rear_motor/rear_motor.h"
 
 typedef enum
 {
     SERIAL_MENU_PAGE_MAIN = 0,
     SERIAL_MENU_PAGE_MODE,
-    SERIAL_MENU_PAGE_ROUTE,
-    SERIAL_MENU_PAGE_PARAM,
+    SERIAL_MENU_PAGE_RUN_ROUTE,
+    SERIAL_MENU_PAGE_RECORD_CONTROL,
+    SERIAL_MENU_PAGE_RECORD_ROUTE,
+    SERIAL_MENU_PAGE_DRIVE_CONTROL,
 } serial_menu_page_t;
 
 static uint8 serial_menu_active = 0;
@@ -50,13 +54,24 @@ static uint8 serial_menu_item_count(void)
             return 4;
         case SERIAL_MENU_PAGE_MODE:
             return 3;
-        case SERIAL_MENU_PAGE_ROUTE:
-            return 3;
-        case SERIAL_MENU_PAGE_PARAM:
+        case SERIAL_MENU_PAGE_RUN_ROUTE:
+            return PORTION2_ROUTE_COUNT + 1U;
+        case SERIAL_MENU_PAGE_RECORD_CONTROL:
+            return 4;
+        case SERIAL_MENU_PAGE_RECORD_ROUTE:
+            return PORTION2_ROUTE_COUNT;
+        case SERIAL_MENU_PAGE_DRIVE_CONTROL:
             return 3;
         default:
             return 1;
     }
+}
+
+static void serial_menu_print_route_item(uint8 index, const char *prefix)
+{
+    char line[40];
+    sprintf(line, "%s%02u", prefix, (unsigned int)(index + 1U));
+    serial_menu_print_item(index, line);
 }
 
 static void serial_menu_render(void)
@@ -74,10 +89,10 @@ static void serial_menu_render(void)
     {
         case SERIAL_MENU_PAGE_MAIN:
             serial_menu_write("[SERIAL-MENU] Menu_Main\r\n");
-            serial_menu_print_item(0, "Car_Go");
-            serial_menu_print_item(1, "Mode_Choice");
-            serial_menu_print_item(2, "Show_Route");
-            serial_menu_print_item(3, "Parameter");
+            serial_menu_print_item(0, "Mode_Choice");
+            serial_menu_print_item(1, "Run_Route");
+            serial_menu_print_item(2, "Record_Control");
+            serial_menu_print_item(3, "Drive_Control");
             break;
 
         case SERIAL_MENU_PAGE_MODE:
@@ -87,18 +102,36 @@ static void serial_menu_render(void)
             serial_menu_print_item(2, "Drive_Mode");
             break;
 
-        case SERIAL_MENU_PAGE_ROUTE:
-            serial_menu_write("[SERIAL-MENU] Show_Route\r\n");
-            serial_menu_print_item(0, "passage");
-            serial_menu_print_item(1, "portion_3");
-            serial_menu_print_item(2, "portion_2_run");
+        case SERIAL_MENU_PAGE_RUN_ROUTE:
+            serial_menu_write("[SERIAL-MENU] Run_Route\r\n");
+            for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+            {
+                serial_menu_print_route_item(i, "Run_Route_");
+            }
+            serial_menu_print_item(PORTION2_ROUTE_COUNT, "Stop_Run");
             break;
 
-        case SERIAL_MENU_PAGE_PARAM:
-            serial_menu_write("[SERIAL-MENU] Parameter\r\n");
-            serial_menu_print_item(0, "PID");
-            serial_menu_print_item(1, "Control");
-            serial_menu_print_item(2, "Status");
+        case SERIAL_MENU_PAGE_RECORD_CONTROL:
+            serial_menu_write("[SERIAL-MENU] Record_Control\r\n");
+            serial_menu_print_item(0, "Select_Record_Route");
+            serial_menu_print_item(1, "Start_Stop_Record");
+            serial_menu_print_item(2, "Clear_Current_Route");
+            serial_menu_print_item(3, "Save_Current_Route");
+            break;
+
+        case SERIAL_MENU_PAGE_RECORD_ROUTE:
+            serial_menu_write("[SERIAL-MENU] Record_Route\r\n");
+            for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
+            {
+                serial_menu_print_route_item(i, "Record_Route_");
+            }
+            break;
+
+        case SERIAL_MENU_PAGE_DRIVE_CONTROL:
+            serial_menu_write("[SERIAL-MENU] Drive_Control\r\n");
+            serial_menu_print_item(0, "K1_Speed_Down");
+            serial_menu_print_item(1, "K2_Speed_Up");
+            serial_menu_print_item(2, "K4_Back_Record");
             break;
 
         default:
@@ -130,18 +163,22 @@ static void serial_menu_apply_mode(Mode_Choice mode)
     }
     else if(mode == Guandao_Portion2_Recode)
     {
+        portion2_run_stop();
+        rear_motor_stop();
+        portion2_record_enter_mode();
         main_mode = Guandao_Portion2_Recode;
         route_setting_choice = 1;
         conrtol_mode = IDLE;
     }
     else
     {
+        portion2_run_stop();
+        rear_motor_stop();
         main_mode = Guandao_Drive;
         route_setting_choice = 1;
         conrtol_mode = GUANDAO;
     }
 
-    serial_menu_render();
 }
 
 static void serial_menu_enter(void)
@@ -151,19 +188,19 @@ static void serial_menu_enter(void)
         case SERIAL_MENU_PAGE_MAIN:
             if(serial_menu_cursor == 0)
             {
-                serial_menu_apply_mode(Guandao_Voice);
+                serial_menu_set_page(SERIAL_MENU_PAGE_MODE);
             }
             else if(serial_menu_cursor == 1)
             {
-                serial_menu_set_page(SERIAL_MENU_PAGE_MODE);
+                serial_menu_set_page(SERIAL_MENU_PAGE_RUN_ROUTE);
             }
             else if(serial_menu_cursor == 2)
             {
-                serial_menu_set_page(SERIAL_MENU_PAGE_ROUTE);
+                serial_menu_set_page(SERIAL_MENU_PAGE_RECORD_CONTROL);
             }
             else
             {
-                serial_menu_set_page(SERIAL_MENU_PAGE_PARAM);
+                serial_menu_set_page(SERIAL_MENU_PAGE_DRIVE_CONTROL);
             }
             break;
 
@@ -180,26 +217,70 @@ static void serial_menu_enter(void)
             {
                 serial_menu_apply_mode(Guandao_Drive);
             }
+            serial_menu_render();
             break;
 
-        case SERIAL_MENU_PAGE_ROUTE:
-            if(serial_menu_cursor == 0)
+        case SERIAL_MENU_PAGE_RUN_ROUTE:
+            serial_menu_apply_mode(Guandao_Voice);
+            if(serial_menu_cursor < PORTION2_ROUTE_COUNT)
             {
-                route_setting_choice = 1;
-            }
-            else if(serial_menu_cursor == 1)
-            {
-                route_setting_choice = 2;
+                portion2_run_select_route(serial_menu_cursor);
             }
             else
             {
-                route_setting_choice = 3;
+                portion2_run_stop();
+                rear_motor_stop();
             }
             serial_menu_render();
             break;
 
-        case SERIAL_MENU_PAGE_PARAM:
-            serial_menu_write("[SERIAL-MENU] Parameter edit stays on the physical menu.\r\n");
+        case SERIAL_MENU_PAGE_RECORD_CONTROL:
+            serial_menu_apply_mode(Guandao_Portion2_Recode);
+            if(serial_menu_cursor == 0)
+            {
+                serial_menu_set_page(SERIAL_MENU_PAGE_RECORD_ROUTE);
+                return;
+            }
+            else if(serial_menu_cursor == 1)
+            {
+                portion2_record_remote_start_stop_request();
+            }
+            else if(serial_menu_cursor == 2)
+            {
+                portion2_record_remote_clear_request();
+            }
+            else
+            {
+                portion2_record_remote_save_request();
+            }
+            serial_menu_render();
+            break;
+
+        case SERIAL_MENU_PAGE_RECORD_ROUTE:
+            serial_menu_apply_mode(Guandao_Portion2_Recode);
+            portion2_record_select_route(serial_menu_cursor);
+            serial_menu_render();
+            break;
+
+        case SERIAL_MENU_PAGE_DRIVE_CONTROL:
+            serial_menu_apply_mode(Guandao_Drive);
+            if(serial_menu_cursor == 0)
+            {
+                key1_flag = 1;
+            }
+            else if(serial_menu_cursor == 1)
+            {
+                key2_flag = 1;
+            }
+            else
+            {
+                portion2_run_stop();
+                rear_motor_stop();
+                portion2_record_enter_mode();
+                main_mode = Guandao_Portion2_Recode;
+                route_setting_choice = 1;
+                conrtol_mode = IDLE;
+            }
             serial_menu_render();
             break;
 

@@ -179,6 +179,7 @@ void portion2_record_reset(void);
 void portion2_record_enter_mode(void);
 void portion2_record_mark_loaded_routes_saved(void);
 void portion2_record_task(void);
+void portion2_record_select_route(uint8 route_id);
 void portion2_record_remote_start_stop_request(void);
 void portion2_record_remote_clear_request(void);
 void portion2_record_remote_save_request(void);
@@ -192,8 +193,6 @@ void portion2_run_task(void);
 void portion2_serial_dump_routes(void);
 void portion2_serial_dump_route(uint8 route_id);
 void portion2_serial_toggle_trace(void);
-void portion2_serial_toggle_route_status_live(void);
-void portion2_serial_route_status_live_task(void);
 uint8 portion2_is_running(void);
 
 void azimuth_adjust(guandao_state * state , float start_d , float dist_to_final , float * target_steering , float target_yaw );

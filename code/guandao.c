@@ -129,8 +129,6 @@ static uint8 portion2_record_start_pending = 0;
 static uint8 portion2_record_remote_start_stop_req = 0;
 static uint8 portion2_record_remote_clear_req = 0;
 static uint8 portion2_record_remote_save_req = 0;
-static uint8 portion2_route_status_live_enabled = 0;
-static uint32 portion2_route_status_live_last_ms = 0;
 
 #define PORTION2_GPS_ORIGIN_SAMPLE_COUNT 5U
 #define PORTION2_GPS_FILTER_SAMPLE_COUNT 3U
@@ -252,7 +250,6 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_GUIDED_YAW_SLOW_SPEED 8.0f
 #define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
 #define PORTION2_TRACK_CENTER_EPSILON_M 0.01f
-#define PORTION2_ROUTE_STATUS_LIVE_PERIOD_MS (1000U)
 
 #define PORTION2_FINAL_YAW_ALIGN_RUNNING   0U
 #define PORTION2_FINAL_YAW_ALIGN_DONE      1U
@@ -2199,61 +2196,6 @@ void portion2_serial_dump_routes(void)
     uart_write_string(DEBUG_UART_INDEX, "[P2-DUMP] send D1-D9 to dump points, T toggle run trace, S stop\r\n");
 }
 
-static void portion2_serial_write_route_status_live(void)
-{
-    char line[96];
-
-    for(uint8 i = 0; i < PORTION2_ROUTE_COUNT; i++)
-    {
-        int len = sprintf(line,
-                          "[P2-ROUTE-LIVE] route=%02u pts=%03u gps=%02u marked=%s\r\n",
-                          (unsigned)(i + 1),
-                          (unsigned)portion2_route_length[i],
-                          (unsigned)portion2_route_gps_count[i],
-                          (portion2_route_length[i] > 0) ? "YES" : "NO");
-        if(len > 0)
-        {
-            uart_write_string(DEBUG_UART_INDEX, line);
-        }
-    }
-}
-
-void portion2_serial_toggle_route_status_live(void)
-{
-    portion2_route_status_live_enabled = !portion2_route_status_live_enabled;
-    portion2_route_status_live_last_ms = 0;
-
-    if(portion2_route_status_live_enabled)
-    {
-        uart_write_string(DEBUG_UART_INDEX, "[P2-ROUTE-LIVE] enabled\r\n");
-        portion2_serial_write_route_status_live();
-        portion2_route_status_live_last_ms = system_getval_ms();
-    }
-    else
-    {
-        uart_write_string(DEBUG_UART_INDEX, "[P2-ROUTE-LIVE] disabled\r\n");
-    }
-}
-
-void portion2_serial_route_status_live_task(void)
-{
-    uint32 now_ms;
-
-    if(!portion2_route_status_live_enabled)
-    {
-        return;
-    }
-
-    now_ms = system_getval_ms();
-    if((uint32)(now_ms - portion2_route_status_live_last_ms) < PORTION2_ROUTE_STATUS_LIVE_PERIOD_MS)
-    {
-        return;
-    }
-
-    portion2_route_status_live_last_ms = now_ms;
-    portion2_serial_write_route_status_live();
-}
-
 void portion2_serial_dump_route(uint8 route_id)
 {
     uint16 len;
@@ -2741,6 +2683,25 @@ static void portion2_record_key_state_reset(void)
 void portion2_record_remote_start_stop_request(void)
 {
     portion2_record_remote_start_stop_req = 1;
+}
+
+void portion2_record_select_route(uint8 route_id)
+{
+    if(route_id >= PORTION2_ROUTE_COUNT)
+    {
+        return;
+    }
+    if(portion2_record_state == 1)
+    {
+        uart_write_string(DEBUG_UART_INDEX, "[P2-REC-SELECT] ignored while recording\r\n");
+        Buzzer_check(20);
+        return;
+    }
+
+    portion2_record_start_pending = 0;
+    portion2_record_route = route_id;
+    portion2_serial_log_record_event("SELECT");
+    Buzzer_check(20);
 }
 
 void portion2_record_remote_clear_request(void)
