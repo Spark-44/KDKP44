@@ -516,6 +516,14 @@ static void Portion2_Fixed_Action_Start(voice_drive_action_mode_t mode)
     voice_drive_action_start(mode);
 }
 
+static void Portion2_Ascii_Enter_Run_Mode(void)
+{
+    main_mode = Guandao_Voice;
+    route_setting_choice = 3;
+    conrtol_mode = GUANDAO;
+    voice_inited = 0;
+}
+
 static void Portion2_Ascii_Command_Execute(uint8 data)
 {
     static uint8 reverse_route_pending = 0;
@@ -580,6 +588,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         else
         {
             voice_drive_action_stop();
+            Portion2_Ascii_Enter_Run_Mode();
             if(reverse_route_pending && data >= '1' && data <= '5')
             {
                 portion2_run_select_reverse_route(data - '1');
@@ -603,6 +612,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
         voice_drive_action_stop();
+        Portion2_Ascii_Enter_Run_Mode();
         portion2_run_select_route(data - 'U' + PORTION2_ROUTE_RETURN_5);
     }
     else if(data == 'W')
@@ -613,6 +623,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
         voice_drive_action_stop();
+        Portion2_Ascii_Enter_Run_Mode();
         portion2_run_select_route(PORTION2_ROUTE_SNAKE);
     }
     else if(data >= 'u' && data <= 'w')
@@ -623,6 +634,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
         voice_drive_action_stop();
+        Portion2_Ascii_Enter_Run_Mode();
         portion2_run_select_route(data - 'u' + PORTION2_ROUTE_RETURN_5);
     }
     else if(data >= 'A' && data <= 'H')
