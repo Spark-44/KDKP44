@@ -17,6 +17,7 @@ static uint8 voice_inited = 0;
 #define PORTION2_DRIVE_SPEED_MIN_MPS  (1.0f)
 #define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
 #define PORTION2_DRIVE_SPEED_MAX_MPS  (5.0f)
+#define PORTION2_DRIVE_GPS_SERIAL_PERIOD_MS (500U)
 
 static float portion2_drive_target_mps = 0.0f;
 static uint8 portion2_drive_full_power = 0;
@@ -279,6 +280,37 @@ static void Portion2_Drive_Encoder_Update_10ms(void)
     rear_motor_encoder_update_10ms();
 }
 
+static void Portion2_Drive_GPS_Serial_Update(void)
+{
+    static uint32 last_gps_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if(main_mode != Guandao_Drive)
+    {
+        return;
+    }
+    if((uint32)(now_ms - last_gps_ms) < PORTION2_DRIVE_GPS_SERIAL_PERIOD_MS)
+    {
+        return;
+    }
+
+    last_gps_ms = now_ms;
+    {
+        char line[128];
+        int len = sprintf(line,
+                          "[DRIVE-GPS] state=%u sats=%u hdop100=%u lat7=%ld lon7=%ld\r\n",
+                          (unsigned)gnss.state,
+                          (unsigned)gnss.satellite_used,
+                          (unsigned)(gnss.hdop * 100.0f + 0.5f),
+                          (long)(gnss.latitude * 10000000.0),
+                          (long)(gnss.longitude * 10000000.0));
+        if(len > 0)
+        {
+            Serial_Debug_Write(line);
+        }
+    }
+}
+
 static void Portion2_Drive_Key_Log(const char *key_name)
 {
     char line[96];
@@ -399,6 +431,7 @@ static void Portion2_Drive_Mode_Task(void)
 
     Portion2_Drive_Mode_Key_Handle();
     Portion2_Drive_Encoder_Update_10ms();
+    Portion2_Drive_GPS_Serial_Update();
     out_servo = 0.0f;
     if(portion2_drive_full_power)
     {
