@@ -12,6 +12,18 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    if($Text -match $Pattern) {
+        throw $Message
+    }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $rearHeader = Get-Content (Join-Path $root 'code\rear_motor\rear_motor.h') -Raw
 $rearSource = Get-Content (Join-Path $root 'code\rear_motor\rear_motor.c') -Raw
@@ -38,7 +50,7 @@ Assert-Contains $rearSource 'if\s*\(\s*target_mps\s*<\s*0\.0f[\s\S]*?actual_mps\
 
 Assert-Contains $remoteSource 'rear_motor_set_speed_limit_mps\s*\(\s*REMOTE_CONTROL_MAX_TARGET_SPEED_MPS\s*\)' 'Remote record control must enable rear speed governor at 2m/s.'
 Assert-Contains $remoteSource 'rear_motor_clear_speed_limit\s*\(\s*\)' 'Remote failsafe/stop must clear rear speed governor.'
-Assert-Contains $remoteSource 'actualSpeed=%.2f[\s\S]*?pwm=%d' 'Remote debug output must include actual speed and PWM for speed-limit diagnosis.'
+Assert-NotContains $remoteSource 'actualSpeed=%.2f[\s\S]*?pwm=%d' 'Remote debug output must stay disabled by default.'
 Assert-Contains $remoteSource '#define\s+REMOTE_CONTROL_CHANNEL_DEAD_ZONE\s+\(50\)' 'Remote speed control must use a larger dead zone around CH2 center.'
 Assert-Contains $remoteSource '#define\s+REMOTE_CONTROL_SPEED_FULL_SCALE\s+\(776\.0f\)' 'Remote CH2 full-scale must match the measured bottom throw so full stick maps to the record speed limit.'
 Assert-Contains $remoteSource '#define\s+REMOTE_CONTROL_SPEED_RAMP_STEP_MPS\s+\(0\.03f\)' 'Remote speed control must ramp target speed for smoothness.'

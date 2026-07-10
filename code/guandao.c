@@ -2482,28 +2482,7 @@ static uint8 portion2_gps_coordinate_valid(void)
 
 static void portion2_serial_log_gps_reject(void)
 {
-    uint32 now_ms = system_getval_ms();
-    uint8 gps_count;
-    char line[192];
-
-    if(portion2_gps_reject_reason == PORTION2_GPS_REJECT_NONE) return;
-    if((uint32)(now_ms - portion2_gps_reject_last_log_ms) < 1000U) return;
-    portion2_gps_reject_last_log_ms = now_ms;
-    gps_count = (portion2_record_route < PORTION2_ROUTE_COUNT)
-            ? portion2_route_gps_count[portion2_record_route]
-            : 0U;
-    sprintf(line,
-            "[P2-REC-GPS-SKIP] route=%u reason=%s fix=%u sats=%u hdop100=%u coord=%u seq=%lu gps=%u/%u\r\n",
-            (unsigned)(portion2_record_route + 1),
-            portion2_gps_reject_reason_text(),
-            (unsigned)gnss.state,
-            (unsigned)gnss.satellite_used,
-            (unsigned)(gnss.hdop * 100.0f + 0.5f),
-            (unsigned)portion2_gps_coordinate_valid(),
-            (unsigned long)portion2_gps_get_fix_sequence(),
-            (unsigned)gps_count,
-            (unsigned)PORTION2_GPS_PER_ROUTE);
-    uart_write_string(DEBUG_UART_INDEX, line);
+    portion2_gps_reject_last_log_ms = system_getval_ms();
 }
 
 static uint8 portion2_record_reject_gps(portion2_gps_reject_reason_t reason)

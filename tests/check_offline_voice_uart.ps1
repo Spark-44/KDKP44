@@ -35,12 +35,19 @@ foreach($pattern in @(
 }
 
 foreach($pattern in @(
-    '\[VOICE-UART1\]\s+init\s+9600\s+TX=P11\.12\s+RX=P11\.10',
-    '\[VOICE-UART1\]\s+bytes=',
     '\[VOICE-UART1\]\s+CMD_ID=0x'
 )) {
     if($source -notmatch $pattern) {
-        throw "Offline voice debug label is missing: $pattern"
+        throw "Offline voice command event label is missing: $pattern"
+    }
+}
+
+foreach($pattern in @(
+    '\[VOICE-UART1\]\s+init\s+9600\s+TX=P11\.12\s+RX=P11\.10',
+    '\[VOICE-UART1\]\s+bytes='
+)) {
+    if($source -match $pattern) {
+        throw "Offline voice automatic debug output must stay disabled: $pattern"
     }
 }
 

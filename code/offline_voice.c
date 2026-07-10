@@ -33,27 +33,7 @@ static void offline_voice_debug_hex(uint8 value)
 
 static void offline_voice_debug_stats(void)
 {
-    uint32 now_ms = system_getval_ms();
-
-    if((uint32)(now_ms - offline_voice_last_stat_ms) >= 1000U)
-    {
-        char line[160];
-        int len;
-
-        offline_voice_last_stat_ms = now_ms;
-        len = sprintf(line,
-                      "[VOICE-UART1] bytes=%lu valid=%lu badEnd=%lu badChecksum=%lu badMsg=%lu last=0x%02X\r\n",
-                      (unsigned long)offline_voice_stats.bytes_total,
-                      (unsigned long)offline_voice_stats.valid_frames,
-                      (unsigned long)offline_voice_stats.bad_tail,
-                      (unsigned long)offline_voice_stats.bad_checksum,
-                      (unsigned long)offline_voice_stats.bad_msg,
-                      (unsigned int)offline_voice_stats.last_cmd_id);
-        if(len > 0)
-        {
-            uart_write_string(DEBUG_UART_INDEX, line);
-        }
-    }
+    offline_voice_last_stat_ms = system_getval_ms();
 }
 
 static uint8 offline_voice_calc_checksum(const uint8 *frame)
@@ -129,7 +109,6 @@ void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data)
               OFFLINE_VOICE_UART_TX_PIN,
               OFFLINE_VOICE_UART_RX_PIN);
     uart_rx_interrupt(OFFLINE_VOICE_UART_INDEX, 1);
-    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART1] init 9600 TX=P11.12 RX=P11.10\r\n");
 }
 
 void offline_voice_poll(void)

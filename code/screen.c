@@ -37,7 +37,6 @@ static uint32 ci_bad_msg = 0;
 static uint32 ci_no_head = 0;
 static uint32 ci_last_stat_ms = 0;
 static uint32 ci_last_byte_ms = 0;
-static uint32 ci_last_idle_report_ms = 0;
 
 // Recent raw dump buffer (16 bytes)
 static uint8  raw_buf[16];
@@ -228,8 +227,6 @@ void screen_init(void)
 
     system_delay_ms(10);
     dot_matrix_screen_clear_pattern();
-
-    uart_write_string(DEBUG_UART_INDEX, "===== CI1302 Screen Ready =====\r\n");
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -243,12 +240,6 @@ void screen_poll(void)
     count = debug_read_ring_buffer(rx_tmp, sizeof(rx_tmp));
     if(count == 0)
     {
-        // Idle detection (step 5)
-        if(now - ci_last_byte_ms >= 5000 && now - ci_last_idle_report_ms >= 5000)
-        {
-            uart_write_string(DEBUG_UART_INDEX, "[CI1302-IDLE] no uart data for 5000ms\r\n");
-            ci_last_idle_report_ms = now;
-        }
         return;
     }
 
@@ -268,14 +259,6 @@ void screen_poll(void)
                 raw_buf[raw_len < 16 ? raw_len++ : 15] = b;
                 if(raw_len >= 16)
                 {
-                    uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
-                    for(uint8 k = 0; k < raw_len; k++)
-                    {
-                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
-                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
-                        uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
-                        if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
-                    }
                     raw_len = 0;
                     ci_no_head++;
                 }
@@ -300,14 +283,6 @@ void screen_poll(void)
                 raw_buf[raw_len < 16 ? raw_len++ : 15] = b;
                 if(raw_len >= 16)
                 {
-                    uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
-                    for(uint8 k = 0; k < raw_len; k++)
-                    {
-                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
-                        uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
-                        uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
-                        if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
-                    }
                     raw_len = 0;
                     ci_no_head++;
                 }
@@ -323,14 +298,6 @@ void screen_poll(void)
         // Timeout dump for partial garbage before finding head (step 2)
         if(raw_len > 0 && (now - raw_last_ms) >= 50 && raw_state == 0)
         {
-            uart_write_string(DEBUG_UART_INDEX, "[CI1302-RAW] ");
-            for(uint8 k = 0; k < raw_len; k++)
-            {
-                uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[(raw_buf[k] >> 4) & 0x0F]);
-                uart_write_byte(DEBUG_UART_INDEX, "0123456789ABCDEF"[raw_buf[k] & 0x0F]);
-                uart_write_byte(DEBUG_UART_INDEX, (k == raw_len - 1) ? '\r' : ' ');
-                if(k == raw_len - 1) uart_write_byte(DEBUG_UART_INDEX, '\n');
-            }
             raw_len = 0;
             ci_no_head++;
         }
@@ -343,19 +310,6 @@ void screen_poll(void)
     if(now - ci_last_stat_ms >= 1000)
     {
         ci_last_stat_ms = now;
-        char line[160];
-        int len = sprintf(line,
-                          "[CI1302-STAT] bytes=%lu valid=%lu badEnd=%lu badChecksum=%lu badMsg=%lu noHead=%lu\r\n",
-                          (unsigned long)ci_bytes_total,
-                          (unsigned long)ci_valid_frames,
-                          (unsigned long)ci_bad_tail,
-                          (unsigned long)ci_bad_checksum,
-                          (unsigned long)ci_bad_msg,
-                          (unsigned long)ci_no_head);
-        if(len > 0)
-        {
-            uart_write_string(DEBUG_UART_INDEX, line);
-        }
     }
 }
 

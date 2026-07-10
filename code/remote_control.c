@@ -26,7 +26,6 @@ static float  remote_target_speed_mps = 0.0f;
 static float  remote_command_speed_mps = 0.0f;
 static uint32 remote_last_frame_ms = 0;
 static uint32 remote_last_10ms = 0;
-static uint32 remote_last_debug_ms = 0;
 static uint8  remote_ch3_button_last = 0;
 static uint8  remote_ch5_button_last = 0;
 static uint8  remote_ch6_button_last = 0;
@@ -207,49 +206,9 @@ static void remote_control_update_record_buttons(void)
     remote_ch6_button_last = ch6_active;
 }
 
-static void remote_control_debug_print(void)
-{
-    uint32 now_ms = system_getval_ms();
-
-    if((uint32)(now_ms - remote_last_debug_ms) >= 200U)
-    {
-        char line[260];
-        int len;
-
-        remote_last_debug_ms = now_ms;
-        len = sprintf(line,
-                      "[REMOTE-SBUS] ch1=%ld ch2=%ld ch4=%u mode=%u targetAngle=%.1f targetSpeed=%.2f actualSpeed=%.2f pwm=%d state=%u frame=%lu drop=%lu resync=%lu err=%lu\r\n",
-                      (long)remote_channel_offset[0],
-                      (long)remote_channel_offset[1],
-                      (unsigned int)uart_receiver.channel[3],
-                      (unsigned int)main_mode,
-                      remote_target_angle_deg,
-                      remote_target_speed_mps,
-                      rear_motor_get_speed_mps(),
-                      (int)rear_motor_get_pwm(),
-                      (unsigned int)uart_receiver.state,
-                      (unsigned long)uart_receiver.frame_count,
-                      (unsigned long)uart_receiver.drop_count,
-                      (unsigned long)uart_receiver.resync_count,
-                      (unsigned long)uart_receiver.uart_error_count);
-        if(len > 0)
-        {
-            uart_write_string(DEBUG_UART_INDEX, line);
-        }
-    }
-}
-
 static void remote_control_apply_failsafe(const char *reason)
 {
-    if(remote_control_active)
-    {
-        char line[96];
-        int len = sprintf(line, "[REMOTE-SBUS] failsafe %s\r\n", reason);
-        if(len > 0)
-        {
-            uart_write_string(DEBUG_UART_INDEX, line);
-        }
-    }
+    (void)reason;
 
     remote_control_active = 0;
     remote_channel_start_init = 0;
@@ -297,13 +256,11 @@ void remote_control_init(void)
     remote_command_speed_mps = 0.0f;
     remote_last_frame_ms = system_getval_ms();
     remote_last_10ms = remote_last_frame_ms;
-    remote_last_debug_ms = remote_last_frame_ms;
     remote_ch3_button_last = 0;
     remote_ch5_button_last = 0;
     remote_ch6_button_last = 0;
 
     uart_receiver_init();
-    uart_write_string(DEBUG_UART_INDEX, "[REMOTE-SBUS] init UART2 RX=P10.6 TX=P10.5 BAUD=100000\r\n");
 }
 
 uint8 remote_control_task(void)
@@ -329,7 +286,6 @@ uint8 remote_control_task(void)
             {
                 remote_control_apply_failsafe("MODE");
             }
-            remote_control_debug_print();
         }
         else
         {
