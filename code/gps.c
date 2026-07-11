@@ -12,6 +12,7 @@ Lost_Point lost_judge;
 #define PORTION2_GPS_FUSION_MIN_INLIERS       (8U)
 #define PORTION2_GPS_FUSION_MAX_ANCHOR_RESIDUAL (1.5f)
 #define PORTION2_GPS_FUSION_REPEAT_DISTANCE   (0.05f)
+#define PORTION2_GPS_FUSION_MAX_JUMP_M        (1.0f)
 #define PORTION2_GPS_FUSION_MAX_ERROR         (1.5f)
 #define PORTION2_GPS_FUSION_GAIN              (0.10f)
 #define PORTION2_GPS_FUSION_MAX_CORRECTION    (0.10f)
@@ -26,6 +27,7 @@ Lost_Point lost_judge;
 #define PORTION2_GPS_RECOVERY_REQUIRED_FIXES  (3U)
 #define PORTION2_GPS_RECOVERY_MAX_ERROR       (2.0f)
 #define PORTION2_GPS_METERS_PER_DEGREE        (111320.0f)
+#define PORTION2_GPS_FUSION_REASON_JUMP       (24U)
 
 typedef struct
 {
@@ -582,6 +584,20 @@ void portion2_gps_fusion_update(guandao_state *state)
                 * (double)portion2_gps_fusion.longitude_scale);
         float last_north = (float)((gnss.latitude - portion2_gps_fusion.last_lat)
                 * (double)PORTION2_GPS_METERS_PER_DEGREE);
+        if(hypotf(last_east, last_north) > PORTION2_GPS_FUSION_MAX_JUMP_M)
+        {
+            portion2_gps_fusion.recovery_good_count = 0;
+            portion2_gps_fusion.large_error_count++;
+            portion2_gps_fusion.last_reason = PORTION2_GPS_FUSION_REASON_JUMP;
+            if(portion2_gps_fusion.large_error_count >= PORTION2_GPS_FUSION_MAX_LARGE_ERRORS)
+            {
+                portion2_gps_fusion.ready = 0;
+                portion2_gps_fusion.recovering = 1;
+                portion2_gps_fusion.recovery_good_count = 0;
+            }
+            portion2_gps_fusion_log(state);
+            return;
+        }
         if(hypotf(last_east, last_north) < PORTION2_GPS_FUSION_REPEAT_DISTANCE)
         {
             portion2_gps_fusion.last_reason = 5;
@@ -896,3 +912,4 @@ void GPS_Work_SHOW(void)
     }
 
 }
+
