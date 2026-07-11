@@ -52,6 +52,7 @@
 //引脚配置
 //--------------------------------------------------------------------------------------------------
 #define GNSS_UART           (UART_3)
+#define GNSS_UART_BAUD      (115200)
 #define GNSS_RX             (UART3_TX_P15_6)                                    // GPS RX引脚连接到单片机此
 #define GNSS_TX             (UART3_RX_P15_7)                                    // GPS TX串口引脚
 
