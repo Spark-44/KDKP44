@@ -451,19 +451,6 @@ uint8 portion2_gps_fusion_startup_update(guandao_state *state)
         portion2_gps_fusion_log(state);
         return PORTION2_GPS_STARTUP_WAIT;
     }
-    if(portion2_gps_fusion.startup_has_last_coordinate)
-    {
-        float last_east = (float)((gnss.longitude - portion2_gps_fusion.startup_last_lon)
-                * (double)portion2_gps_fusion.longitude_scale);
-        float last_north = (float)((gnss.latitude - portion2_gps_fusion.startup_last_lat)
-                * (double)PORTION2_GPS_METERS_PER_DEGREE);
-        if(hypotf(last_east, last_north) < PORTION2_GPS_FUSION_REPEAT_DISTANCE)
-        {
-            portion2_gps_fusion.last_reason = 5;
-            portion2_gps_fusion_log(state);
-            return PORTION2_GPS_STARTUP_WAIT;
-        }
-    }
     portion2_gps_fusion.startup_last_lat = gnss.latitude;
     portion2_gps_fusion.startup_last_lon = gnss.longitude;
     portion2_gps_fusion.startup_has_last_coordinate = 1;
@@ -912,4 +899,5 @@ void GPS_Work_SHOW(void)
     }
 
 }
+
 
