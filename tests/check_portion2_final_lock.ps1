@@ -15,7 +15,7 @@ foreach($pattern in @(
     'dist_to_final\s*>=\s*portion2_final_zone_min_dist\s*\+\s*PORTION2_FINAL_OVERSHOOT_RISE_DIST',
     'raw_point\s*>=\s*raw_length\s*-\s*1[\s\S]*?dist_to_final\s*<=\s*final_stop_distance',
     'portion2_final_zone_overshoot_detect\s*\(\s*raw_point\s*,\s*raw_length\s*,\s*dist_to_final\s*\)',
-    'guandao_debug_stop_reason\s*=\s*13'
+    'guandao_debug_stop_reason\s*=\s*\(\s*portion2_selected_route\s*==\s*PORTION2_ROUTE_SNAKE\s*\)\s*\?\s*12\s*:\s*13'
 )) {
     if($guandao -notmatch $pattern) {
         throw "Missing final-zone lock behavior: $pattern"
@@ -27,3 +27,5 @@ if($guandao -match 'dist_to_final\s*<=\s*final_stop_distance\s*\|\|\s*portion2_f
 }
 
 Write-Output 'Portion-2 final-zone lock checks passed.'
+
+

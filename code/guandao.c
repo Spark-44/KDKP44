@@ -1732,25 +1732,6 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    }
    if(v_center < MIN_SPEED) v_center = MIN_SPEED;
 
-   if (!portion1_parking_zone && dist_to_final < final_dsts && state->current_point_index >= route_length - 30)
-   {
-       float terminal_speed = base_speed * (dist_to_final / final_dsts);
-
-       arrive_threshold = persuit_threshold*(dist_to_final / final_dsts);
-       if(arrive_threshold < 0.3f){arrive_threshold = 0.3f;}
-       if(guandao_uses_portion3_trace_standard(state))
-       {
-           if(terminal_speed < MIN_SPEED) terminal_speed = MIN_SPEED;
-       }
-       else if(terminal_speed < PORTION1_END_MIN_SPEED) terminal_speed = PORTION1_END_MIN_SPEED;
-       if(v_center > terminal_speed) v_center = terminal_speed;
-   }
-
-   if(state == &portion_2 && dist_to_final <= PORTION2_TERMINAL_POSE_LENGTH_M
-           && v_center > PORTION2_TERMINAL_APPROACH_SPEED)
-   {
-       v_center = PORTION2_TERMINAL_APPROACH_SPEED;
-   }
 
    if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
     if(state == &portion_2)
@@ -1778,52 +1759,20 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         if(raw_length > 0 && raw_point >= raw_length - 1
                 && dist_to_final <= final_stop_distance)
         {
-            uint8 align_status = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
-            if(align_status == PORTION2_FINAL_YAW_ALIGN_RUNNING)
-            {
-                last_target_steering = 0.0f;
-                last_steer_limit_ms = 0;
-                return;
-            }
-            if(align_status == PORTION2_FINAL_YAW_ALIGN_REACQUIRE)
-            {
-                if(portion2_final_zone_armed)
-                {
-                    state->current_point_index = route_length;
-                    guandao_debug_stop_reason = 13;
-                    *out_v_l = 0;
-                    *out_v_r = 0;
-                    *out_servo = 0;
-                    last_target_steering = 0.0f;
-                    last_steer_limit_ms = 0;
-                    portion2_final_zone_reset();
-                    return;
-                }
-                if(state->current_point_index >= route_length - 1) state->current_point_index = route_length - 2;
-            }
-            else
-            {
-                state->current_point_index = route_length;
-                if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
-                * out_v_l = 0;
-                * out_v_r = 0;
-                *out_servo = 0;
-                last_target_steering = 0.0f;
-                last_steer_limit_ms = 0;
-                portion2_final_zone_reset();
-                return;
-            }
+            state->current_point_index = route_length;
+            guandao_debug_stop_reason = 8;
+            *out_v_l = 0;
+            *out_v_r = 0;
+            *out_servo = 0;
+            last_target_steering = 0.0f;
+            last_steer_limit_ms = 0;
+            portion2_final_zone_reset();
+            return;
         }
    }
    if(guandao_uses_portion3_trace_standard(state) && state->current_point_index >= route_length - 1
            && dist_to_final <= PORTION3_FINAL_STOP_DIST)
    {
-       if(state == &portion_2 && !portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo))
-       {
-           last_target_steering = 0.0f;
-           last_steer_limit_ms = 0;
-           return;
-       }
        state->current_point_index = route_length;
        if(guandao_debug_stop_reason != 10) guandao_debug_stop_reason = 8;
        * out_v_l = 0;

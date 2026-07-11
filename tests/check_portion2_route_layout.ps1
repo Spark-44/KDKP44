@@ -13,6 +13,12 @@ function Assert-Contains([string]$Text, [string]$Pattern, [string]$Message) {
     }
 }
 
+function Assert-NotContains([string]$Text, [string]$Pattern, [string]$Message) {
+    if ($Text -match $Pattern) {
+        throw $Message
+    }
+}
+
 Assert-Contains $header '#define\s+PORTION2_ROUTE_COUNT\s+12' 'route count must be 12'
 Assert-Contains $header '#define\s+PORTION2_ROUTE_MAX_POINTS\s+75' 'each route must hold 75 inertial points'
 Assert-Contains $header '#define\s+PORTION2_TOTAL_ROUTE_POINTS\s+900' 'inertial capacity must be 12 x 75'
@@ -91,7 +97,8 @@ Assert-Contains $source '#define\s+PORTION2_FINAL_YAW_ALIGN_SPEED\s+4\.0f' 'fina
 Assert-Contains $source '#define\s+PORTION2_TERMINAL_APPROACH_SPEED\s+6\.0f' 'terminal route approach must respect the 0.6m/s minimum'
 Assert-Contains $source 'upcoming_turn\s*>=\s*GUANDAO_SHARP_TURN_ANGLE[\s\S]*?v_center\s*>\s*GUANDAO_SHARP_TURN_SPEED' 'sharp turns must use the sharp-turn speed cap'
 Assert-Contains $source 'fabsf\(angle_diff\)\s*>\s*25\.0f[\s\S]*?v_center\s*>\s*GUANDAO_LARGE_CURVE_SPEED' 'large turns must use the large-curve speed cap'
-Assert-Contains $source 'float\s+terminal_speed\s*=\s*base_speed\s*\*\s*\(dist_to_final\s*/\s*final_dsts\)[\s\S]*?if\(v_center\s*>\s*terminal_speed\)\s*v_center\s*=\s*terminal_speed' 'terminal slowdown must not raise a curve-limited speed'
+Assert-NotContains $source 'float\s+terminal_speed\s*=\s*base_speed\s*\*\s*\(dist_to_final\s*/\s*final_dsts\)' 'run mode must not use terminal-distance linear slowdown'
+Assert-Contains $source 'target_steering\s*=\s*portion2_guided_terminal_steering\s*\(' 'terminal yaw guidance must happen during normal line following'
 Assert-Contains $source '#define\s+PORTION2_SNAKE_STEERING_CMD_LIMIT\s+20\.0f' 'route 12 normal steering limit must be 20 degrees'
 Assert-Contains $source '#define\s+PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT\s+30\.0f' 'route 12 sharp steering limit must be 30 degrees'
 Assert-Contains $source '#define\s+PORTION2_SNAKE_FINAL_STOP_DIST\s+0\.40f' 'route 12 final stop radius must be 0.40m'
@@ -107,3 +114,4 @@ Assert-Contains $source 'portion2_route12_overshoot_detect\s*\([^;]+\)[\s\S]*?gu
 Assert-Contains $source 'void\s+portion2_run_stop\s*\([^)]*\)[\s\S]*?portion2_route12_overshoot_reset\s*\(' 'manual run stop must reset route 12 overshoot state'
 
 Write-Host 'portion-2 12-route layout checks passed'
+
