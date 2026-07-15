@@ -81,13 +81,15 @@ void angle_control_update(void) {
     float pid_output = 0;
 
     angle_ctrl.current_angle = angle_control_get_angle_from_count(current_count);
+    float angle_error = angle_ctrl.target_angle - angle_ctrl.current_angle;
 
-    pid_output = PID_Compute(&angle_ctrl.pid, angle_ctrl.target_angle, angle_ctrl.current_angle);
-
-    if ((angle_ctrl.target_angle - angle_ctrl.current_angle < ANGLE_DEAD_BAND) &&
-        (angle_ctrl.target_angle - angle_ctrl.current_angle > -ANGLE_DEAD_BAND)) {
+    if ((angle_error < ANGLE_DEAD_BAND) &&
+        (angle_error > -ANGLE_DEAD_BAND)) {
         pid_output = 0;
         angle_ctrl.pid.Integral = 0;
+    } else {
+        pid_output = PID_Compute(&angle_ctrl.pid, angle_ctrl.target_angle, angle_ctrl.current_angle);
+        pid_output += (angle_error > 0.0f) ? ANGLE_FEED_FORWARD : -ANGLE_FEED_FORWARD;
     }
 
     Value_Limit_float(&pid_output, -ANGLE_OUTPUT_MAX, ANGLE_OUTPUT_MAX);

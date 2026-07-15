@@ -15,11 +15,11 @@ $root = Split-Path -Parent $PSScriptRoot
 $sourcePath = Join-Path $root 'code\guandao.c'
 $source = Get-Content -Raw -Path $sourcePath
 
-Assert-Match $source '#define\s+PORTION2_STEERING_CMD_LIMIT\s+16\.0f' `
-    'routes 1-10 normal steering limit must be 16 degrees'
+Assert-Match $source '#define\s+PORTION2_STEERING_CMD_LIMIT\s+22\.0f' `
+    'routes 1-10 normal steering limit must be 22 degrees'
 
-Assert-Match $source '#define\s+PORTION2_SHARP_STEERING_CMD_LIMIT\s+28\.0f' `
-    'routes 1-10 sharp steering limit must be 28 degrees'
+Assert-Match $source '#define\s+PORTION2_SHARP_STEERING_CMD_LIMIT\s+34\.0f' `
+    'routes 1-10 sharp steering limit must be 34 degrees'
 
 Assert-Match $source '#define\s+PORTION2_ROUTE11_STEERING_CMD_LIMIT\s+18\.0f' `
     'route 11 reverse steering limit must remain 18 degrees'

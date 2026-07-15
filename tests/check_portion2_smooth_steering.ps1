@@ -15,8 +15,8 @@ function Assert-Match {
 $repo = Split-Path -Parent $PSScriptRoot
 $guandao = Get-Content -Raw -Path (Join-Path $repo 'code/guandao.c')
 
-Assert-Match $guandao '#define\s+PORTION2_SMOOTH_STEER_RATE_LIMIT\s+\(0\.28f\)' `
-    'portion2 smooth steering must use a gentler steering rate limit.'
+Assert-Match $guandao '#define\s+PORTION2_SMOOTH_STEER_RATE_LIMIT\s+\(0\.75f\)' `
+    'portion2 smooth steering must use the faster steering rate needed for normal-speed curve following.'
 
 Assert-Match $guandao 'static\s+void\s+portion2_apply_smooth_steering_params\s*\([^)]*float\s*\*\s*steering_gain[^)]*float\s*\*\s*steering_limit[^)]*float\s*\*\s*steering_rate_limit[^)]*\)' `
     'portion2 steering params must be centralized in a helper.'

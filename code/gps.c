@@ -14,15 +14,21 @@ Lost_Point lost_judge;
 #define PORTION2_GPS_FUSION_REPEAT_DISTANCE   (0.05f)
 #define PORTION2_GPS_FUSION_MAX_JUMP_M        (1.0f)
 #define PORTION2_GPS_FUSION_MAX_ERROR         (1.5f)
+#define PORTION2_GPS_FUSION_HOLD_ERROR        (0.80f)
+#define PORTION2_GPS_FUSION_DISABLE_ERROR     (1.00f)
+#define PORTION2_GPS_FUSION_DISABLE_COUNT     (2U)
 #define PORTION2_GPS_FUSION_GAIN              (0.10f)
 #define PORTION2_GPS_FUSION_MAX_CORRECTION    (0.10f)
+#define PORTION2_GPS_FUSION_DAMP_START_ERROR  (0.50f)
+#define PORTION2_GPS_FUSION_DAMP_FULL_ERROR   (0.90f)
+#define PORTION2_GPS_FUSION_MIN_GAIN_SCALE    (0.25f)
 #define PORTION2_GPS_FUSION_MIN_SCALE         (0.40f)
 #define PORTION2_GPS_FUSION_MAX_SCALE         (2.50f)
 #define PORTION2_GPS_FUSION_MAX_RMS_ERROR     (1.20f)
 #define PORTION2_GPS_STARTUP_REQUIRED_SAMPLES (3U)
 #define PORTION2_GPS_STARTUP_TIMEOUT_MS       (10000U)
 #define PORTION2_GPS_STARTUP_STABILITY_M      (1.2f)
-#define PORTION2_GPS_STARTUP_MAX_SHIFT_M      (5.0f)
+#define PORTION2_GPS_STARTUP_MAX_SHIFT_M      (1.2f)
 #define PORTION2_GPS_FUSION_MAX_LARGE_ERRORS  (3U)
 #define PORTION2_GPS_RECOVERY_REQUIRED_FIXES  (3U)
 #define PORTION2_GPS_RECOVERY_MAX_ERROR       (2.0f)
@@ -62,6 +68,7 @@ typedef struct
     float gps_y;
     float error;
     float correction;
+    float gain_scale;
     float startup_sum_x;
     float startup_sum_y;
     float startup_shift;
@@ -147,10 +154,29 @@ static void portion2_gps_to_local_meters(double lat, double lon, float *east, fl
     *north = (float)((lat - portion2_gps_fusion.origin_lat) * (double)PORTION2_GPS_METERS_PER_DEGREE);
 }
 
+static float portion2_gps_fusion_gain_scale(float error)
+{
+    float span;
+    float ratio;
+
+    if(error <= PORTION2_GPS_FUSION_DAMP_START_ERROR)
+    {
+        return 1.0f;
+    }
+    if(error >= PORTION2_GPS_FUSION_DAMP_FULL_ERROR)
+    {
+        return PORTION2_GPS_FUSION_MIN_GAIN_SCALE;
+    }
+
+    span = PORTION2_GPS_FUSION_DAMP_FULL_ERROR - PORTION2_GPS_FUSION_DAMP_START_ERROR;
+    ratio = (error - PORTION2_GPS_FUSION_DAMP_START_ERROR) / span;
+    return 1.0f - ratio * (1.0f - PORTION2_GPS_FUSION_MIN_GAIN_SCALE);
+}
+
 static void portion2_gps_fusion_log(guandao_state *state)
 {
     uint32 now_ms = system_getval_ms();
-    char line[240];
+    char line[288];
     int pos = 0;
 
     if((uint32)(now_ms - portion2_gps_fusion.last_log_ms) < 200U) return;
@@ -173,6 +199,8 @@ static void portion2_gps_fusion_log(guandao_state *state)
     portion2_gps_append_fixed100(line, &pos, portion2_gps_fusion.error);
     pos += sprintf(&line[pos], " corr=");
     portion2_gps_append_fixed100(line, &pos, portion2_gps_fusion.correction);
+    pos += sprintf(&line[pos], " gain=");
+    portion2_gps_append_fixed100(line, &pos, portion2_gps_fusion.gain_scale);
     pos += sprintf(&line[pos], " cal=%u/%u large=%u hdop100=%u recover=%u/%u",
                    (unsigned)portion2_gps_fusion.startup_sample_count,
                    (unsigned)PORTION2_GPS_STARTUP_REQUIRED_SAMPLES,
@@ -223,6 +251,7 @@ void portion2_gps_fusion_reset(void)
     portion2_gps_fusion.gps_y = 0.0f;
     portion2_gps_fusion.error = 0.0f;
     portion2_gps_fusion.correction = 0.0f;
+    portion2_gps_fusion.gain_scale = 1.0f;
     portion2_gps_fusion.startup_sum_x = 0.0f;
     portion2_gps_fusion.startup_sum_y = 0.0f;
     portion2_gps_fusion.startup_shift = 0.0f;
@@ -527,6 +556,7 @@ void portion2_gps_fusion_update(guandao_state *state)
     float correction_x;
     float correction_y;
     float correction_scale;
+    float gain_scale;
 
     if(state == 0 || portion2_gps_fusion.startup_active) return;
     if(!portion2_gps_fusion.ready && !portion2_gps_fusion.recovering) return;
@@ -534,6 +564,7 @@ void portion2_gps_fusion_update(guandao_state *state)
     portion2_gps_fusion.last_sequence = sequence;
     portion2_gps_fusion.last_valid = 0;
     portion2_gps_fusion.correction = 0.0f;
+    portion2_gps_fusion.gain_scale = 1.0f;
     portion2_gps_fusion.satellites = gnss.satellite_used;
 
     if(!gnss.state)
@@ -629,6 +660,28 @@ void portion2_gps_fusion_update(guandao_state *state)
         portion2_gps_fusion_log(state);
         return;
     }
+    if(portion2_gps_fusion.error >= PORTION2_GPS_FUSION_DISABLE_ERROR)
+    {
+        portion2_gps_fusion.large_error_count++;
+        portion2_gps_fusion.last_reason = 25;
+        if(portion2_gps_fusion.large_error_count >= PORTION2_GPS_FUSION_DISABLE_COUNT)
+        {
+            portion2_gps_fusion.ready = 0;
+            portion2_gps_fusion.recovering = 1;
+            portion2_gps_fusion.recovery_good_count = 0;
+            portion2_gps_fusion.last_valid = 0;
+            portion2_gps_fusion.last_reason = 26;
+        }
+        portion2_gps_fusion_log(state);
+        return;
+    }
+    if(portion2_gps_fusion.error > PORTION2_GPS_FUSION_HOLD_ERROR)
+    {
+        portion2_gps_fusion.large_error_count = 0;
+        portion2_gps_fusion.last_reason = 25;
+        portion2_gps_fusion_log(state);
+        return;
+    }
     if(portion2_gps_fusion.error > PORTION2_GPS_FUSION_MAX_ERROR)
     {
         portion2_gps_fusion.large_error_count++;
@@ -646,8 +699,10 @@ void portion2_gps_fusion_update(guandao_state *state)
     }
     portion2_gps_fusion.large_error_count = 0;
 
-    correction_x = error_x * PORTION2_GPS_FUSION_GAIN;
-    correction_y = error_y * PORTION2_GPS_FUSION_GAIN;
+    gain_scale = portion2_gps_fusion_gain_scale(portion2_gps_fusion.error);
+    portion2_gps_fusion.gain_scale = gain_scale;
+    correction_x = error_x * PORTION2_GPS_FUSION_GAIN * gain_scale;
+    correction_y = error_y * PORTION2_GPS_FUSION_GAIN * gain_scale;
     portion2_gps_fusion.correction = hypotf(correction_x, correction_y);
     if(portion2_gps_fusion.correction > PORTION2_GPS_FUSION_MAX_CORRECTION)
     {

@@ -14,7 +14,7 @@ SLIP_Cheak slip_state = NONE;
 
 uint8 route_setting_choice = 0;        
 
-float base_speed = 15.0f;
+float base_speed = 25.0f;
 float persuit_threshold = 0.4f;         
 float recode_threshold = 0.2f;         
 int16 preview_spets = 2;                  
@@ -24,6 +24,9 @@ float guandao_debug_distance = 0.0f;
 float guandao_debug_angle_diff = 0.0f;
 float guandao_debug_dist_final = 0.0f;
 uint8 guandao_debug_stop_reason = 0;
+float guandao_debug_steer_cmd = 0.0f;
+float guandao_debug_steer_limit = 0.0f;
+float guandao_debug_steer_rate = 0.0f;
 uint8 portion2_go_channel = 2;
 uint8 portion2_back_channel = 2;
 uint8 portion2_record_route = 0;
@@ -174,8 +177,8 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define GUANDAO_STEERING_GAIN          2.2f
 #define GUANDAO_STEERING_CMD_LIMIT     25.0f
 #define GUANDAO_CURVE_TRIGGER_ANGLE    35.0f
-#define GUANDAO_LARGE_CURVE_SPEED      11.0f
-#define GUANDAO_SHARP_TURN_SPEED       8.0f
+#define GUANDAO_LARGE_CURVE_SPEED      18.0f
+#define GUANDAO_SHARP_TURN_SPEED       15.0f
 #define GUANDAO_HIGH_SPEED_THRESHOLD   5.0f
 #define GUANDAO_HIGH_SPEED_GAIN        1.55f
 #define GUANDAO_HIGH_SPEED_CMD_LIMIT   25.0f
@@ -186,8 +189,8 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define GUANDAO_STEER_RATE_LOW         3.0f
 #define GUANDAO_STEER_RATE_HIGH        1.5f
 #define PORTION2_STEERING_GAIN         0.90f
-#define PORTION2_STEERING_CMD_LIMIT    16.0f
-#define PORTION2_SHARP_STEERING_CMD_LIMIT 28.0f
+#define PORTION2_STEERING_CMD_LIMIT    22.0f
+#define PORTION2_SHARP_STEERING_CMD_LIMIT 34.0f
 #define PORTION2_ROUTE11_STEERING_GAIN 0.70f
 #define PORTION2_ROUTE11_STEERING_CMD_LIMIT 18.0f
 #define PORTION2_ROUTE11_SHARP_STEERING_CMD_LIMIT 25.0f
@@ -199,12 +202,15 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_SHARP_TURN_TRIGGER_DEG 4.0f
 #define PORTION2_SHARP_TURN_RAW_LOOKAHEAD 6
 #define PORTION2_STEER_RATE_LIMIT      0.5f
-#define PORTION2_SMOOTH_STEER_RATE_LIMIT (0.28f)
+#define PORTION2_SMOOTH_STEER_RATE_LIMIT (0.75f)
 #define PORTION2_MIN_PREVIEW_STEPS     14
 #define PORTION2_CURVE_PREVIEW_STEPS   24
 
 #define PORTION2_REFERENCE_SMOOTH_PASSES 4
 #define PORTION2_REFERENCE_SMOOTH_WEIGHT 0.35f
+#define PORTION2_CURVE_SAMPLE_STEP_M   0.08f
+#define PORTION2_CURVE_MIN_SEGMENT_M   0.03f
+#define PORTION2_CURVE_MAX_RAW_DEVIATION_M 0.30f
 #define PORTION2_AUTO_GPS_RECORD_DIST  1.0f
 #define PORTION2_GPS_RECORD_MIN_MOVE_M  0.20f
 #define PORTION2_GPS_RECORD_MAX_JUMP_MARGIN_M 0.8f
@@ -242,13 +248,18 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_GUIDED_ROUTE_COUNT 10U
 #define PORTION2_GUIDED_TERMINAL_BLEND_START_M 2.0f
 #define PORTION2_GUIDED_TERMINAL_BLEND_FULL_M 1.0f
-#define PORTION2_GUIDED_FINAL_STOP_DIST 0.35f
+#define PORTION2_GUIDED_FINAL_STOP_DIST 0.45f
 #define PORTION2_GUIDED_OVERSHOOT_ARM_DIST 1.50f
 #define PORTION2_GUIDED_FINAL_YAW_GAIN 1.0f
 #define PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT 12.0f
 #define PORTION2_GUIDED_YAW_SLOW_DIST_M 3.0f
 #define PORTION2_GUIDED_YAW_SLOW_TRIGGER_DEG 20.0f
 #define PORTION2_GUIDED_YAW_SLOW_SPEED 8.0f
+#define PORTION2_FINAL_CLOSEST_ARM_DIST 0.80f
+#define PORTION2_FINAL_CLOSEST_RISE_DIST 0.05f
+#define PORTION2_FINAL_CLOSEST_CONFIRM_CYCLES 1U
+#define PORTION2_FINAL_CRAWL_DIST 1.00f
+#define PORTION2_FINAL_CRAWL_SPEED 5.0f
 #define PORTION2_TRACK_BAD_THRESHOLD_M 0.30f
 #define PORTION2_TRACK_CENTER_EPSILON_M 0.01f
 
@@ -549,7 +560,7 @@ static void portion2_serial_log_run_point_event(uint8 force)
 {
     int16 route_len = guandao_route_length(&portion_2);
     int16 run_index = guandao_clamp_length(portion_2.current_point_index);
-    char line[320];
+    char line[512];
     int pos = 0;
     state_t final_point;
     portion2_track_sample_t plan_sample;
@@ -634,6 +645,12 @@ static void portion2_serial_log_run_point_event(uint8 force)
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), raw_sample.heading_error);
     pos += sprintf(&line[pos], " steer=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_servo);
+    pos += sprintf(&line[pos], " steer_cmd=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_cmd);
+    pos += sprintf(&line[pos], " steer_limit=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_limit);
+    pos += sprintf(&line[pos], " rate=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_rate);
     pos += sprintf(&line[pos], " final=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), final_dist);
     pos += sprintf(&line[pos], " gps=%s gps_err=", portion2_gps_fusion_is_ready() ? "ON" : "OFF");
@@ -676,7 +693,7 @@ static void portion2_serial_log_run(void)
     int16 raw_number;
     int16 plan_number;
     uint8 gps_done;
-    char line[400];
+    char line[512];
     int pos = 0;
 
     now_ms = system_getval_ms();
@@ -724,10 +741,21 @@ static void portion2_serial_log_run(void)
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_v_r);
     pos += sprintf(&line[pos], " servo=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), out_servo);
+    pos += sprintf(&line[pos], " steer_cmd=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_cmd);
+    pos += sprintf(&line[pos], " steer_limit=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_limit);
+    pos += sprintf(&line[pos], " rate=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_steer_rate);
     pos += sprintf(&line[pos], " dist=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), guandao_debug_distance);
     pos += sprintf(&line[pos], " final_dist=");
     portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), final_dist);
+    pos += sprintf(&line[pos], " final_yaw=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line), portion2_run_final_yaw);
+    pos += sprintf(&line[pos], " yaw_err=");
+    portion2_serial_append_fixed100(line, &pos, (int)sizeof(line),
+            guandao_normalize_angle(portion2_run_final_yaw - Yaw_1));
     pos += sprintf(&line[pos], " reason=%u rev=%u\r\n",
                    (unsigned)guandao_debug_stop_reason,
                    (unsigned)(portion2_run_drive_reverse ? 2 : portion2_run_reverse));
@@ -786,7 +814,7 @@ static float portion2_guided_terminal_steering(float path_steering, float dist_t
     if(blend > 1.0f) blend = 1.0f;
 
     yaw_error = guandao_normalize_angle(final_yaw - current_yaw);
-    yaw_steering = -yaw_error * PORTION2_GUIDED_FINAL_YAW_GAIN;
+    yaw_steering = yaw_error * PORTION2_GUIDED_FINAL_YAW_GAIN;
     Value_Limit_float(&yaw_steering,
             -PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT,
             PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT);
@@ -845,18 +873,45 @@ static void portion2_final_zone_reset(void)
     portion2_final_zone_min_dist = 0.0f;
 }
 
-static uint8 portion2_final_zone_overshoot_detect(int16 raw_point, int16 raw_length, float dist_to_final)
+static uint8 portion2_final_zone_should_stop(int16 raw_point, int16 raw_length, float dist_to_final, float final_stop_distance)
 {
+    int16 final_window_start;
     float arm_dist;
+    float rise_dist;
+    uint8 confirm_cycles;
 
     if(portion2_selected_route == PORTION2_ROUTE_SNAKE)
     {
         portion2_final_zone_reset();
         return 0;
     }
-    if(raw_length <= 0 || raw_point < raw_length - 1) return 0;
-    arm_dist = (portion2_selected_route < PORTION2_GUIDED_ROUTE_COUNT)
-            ? PORTION2_GUIDED_OVERSHOOT_ARM_DIST : PORTION2_FINAL_OVERSHOOT_ARM_DIST;
+    if(raw_length <= 0) return 0;
+
+    if(portion2_selected_route < PORTION2_GUIDED_ROUTE_COUNT)
+    {
+        final_window_start = raw_length - 2;
+        arm_dist = PORTION2_FINAL_CLOSEST_ARM_DIST;
+        rise_dist = PORTION2_FINAL_CLOSEST_RISE_DIST;
+        confirm_cycles = PORTION2_FINAL_CLOSEST_CONFIRM_CYCLES;
+    }
+    else
+    {
+        final_window_start = raw_length - 1;
+        arm_dist = PORTION2_FINAL_OVERSHOOT_ARM_DIST;
+        rise_dist = PORTION2_FINAL_OVERSHOOT_RISE_DIST;
+        confirm_cycles = PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES;
+    }
+    if(final_window_start < 0) final_window_start = 0;
+    if(raw_point < final_window_start)
+    {
+        portion2_final_zone_reset();
+        return 0;
+    }
+
+    if(dist_to_final <= final_stop_distance)
+    {
+        return 1;
+    }
 
     if(!portion2_final_zone_armed)
     {
@@ -864,6 +919,7 @@ static uint8 portion2_final_zone_overshoot_detect(int16 raw_point, int16 raw_len
         {
             portion2_final_zone_armed = 1;
             portion2_final_zone_min_dist = dist_to_final;
+            portion2_final_zone_overshoot_count = 0;
         }
         return 0;
     }
@@ -874,13 +930,13 @@ static uint8 portion2_final_zone_overshoot_detect(int16 raw_point, int16 raw_len
         portion2_final_zone_overshoot_count = 0;
         return 0;
     }
-    if(dist_to_final >= portion2_final_zone_min_dist + PORTION2_FINAL_OVERSHOOT_RISE_DIST)
+    if(dist_to_final >= portion2_final_zone_min_dist + rise_dist)
     {
-        if(portion2_final_zone_overshoot_count < PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES)
+        if(portion2_final_zone_overshoot_count < confirm_cycles)
         {
             portion2_final_zone_overshoot_count++;
         }
-        return (portion2_final_zone_overshoot_count >= PORTION2_FINAL_OVERSHOOT_CONFIRM_CYCLES) ? 1U : 0U;
+        return (portion2_final_zone_overshoot_count >= confirm_cycles) ? 1U : 0U;
     }
 
     portion2_final_zone_overshoot_count = 0;
@@ -1347,6 +1403,124 @@ void recode_waypoint(guandao_state * state)
         daoche_flash_cheack =1;
     }
 }
+
+static state_t portion2_catmull_rom_point(state_t p0, state_t p1, state_t p2, state_t p3, float t)
+{
+    state_t out = p1;
+    float t2 = t * t;
+    float t3 = t2 * t;
+
+    out.x = 0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * t
+            + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2
+            + (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * t3);
+    out.y = 0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * t
+            + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2
+            + (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * t3);
+    out.theta = p1.theta + guandao_normalize_angle(p2.theta - p1.theta) * t;
+    return out;
+}
+
+static state_t portion2_limit_curve_point_to_segment(state_t point, state_t p1, state_t p2)
+{
+    float vx = p2.x - p1.x;
+    float vy = p2.y - p1.y;
+    float len2 = vx * vx + vy * vy;
+    float t;
+    float nearest_x;
+    float nearest_y;
+    float dx;
+    float dy;
+    float dist;
+    float scale;
+
+    if(len2 <= 0.0001f) return point;
+    t = ((point.x - p1.x) * vx + (point.y - p1.y) * vy) / len2;
+    if(t < 0.0f) t = 0.0f;
+    if(t > 1.0f) t = 1.0f;
+    nearest_x = p1.x + vx * t;
+    nearest_y = p1.y + vy * t;
+    dx = point.x - nearest_x;
+    dy = point.y - nearest_y;
+    dist = hypotf(dx, dy);
+    if(dist <= PORTION2_CURVE_MAX_RAW_DEVIATION_M || dist <= 0.0001f)
+    {
+        return point;
+    }
+
+    scale = PORTION2_CURVE_MAX_RAW_DEVIATION_M / dist;
+    point.x = nearest_x + dx * scale;
+    point.y = nearest_y + dy * scale;
+    return point;
+}
+
+static void portion2_curve_append_point(guandao_state *state, state_t point, uint8 force)
+{
+    if(state->planned_length >= MAX_LENGTH_INDEX) return;
+    if(state->planned_length > 0 && !force)
+    {
+        state_t last = state->planned_map[state->planned_length - 1];
+        if(hypotf(point.x - last.x, point.y - last.y) < PORTION2_CURVE_SAMPLE_STEP_M)
+        {
+            return;
+        }
+    }
+    state->planned_map[state->planned_length] = point;
+    state->planned_length++;
+}
+
+static void portion2_build_curve_plan(guandao_state *state)
+{
+    int16 source_length = guandao_clamp_length(state->length_index);
+
+    state->planned_length = 0;
+    state->plan_ready = 0;
+    if(source_length <= 0) return;
+    if(source_length < 3)
+    {
+        for(int16 i = 0; i < source_length && i < MAX_LENGTH_INDEX; i++)
+        {
+            state->planned_map[i] = state->recode_map[i];
+        }
+        state->planned_length = source_length;
+        state->plan_ready = 1;
+        return;
+    }
+
+    portion2_curve_append_point(state, state->recode_map[0], 1U);
+    for(int16 i = 0; i < source_length - 1 && state->planned_length < MAX_LENGTH_INDEX - 1; i++)
+    {
+        state_t p0 = state->recode_map[(i > 0) ? i - 1 : i];
+        state_t p1 = state->recode_map[i];
+        state_t p2 = state->recode_map[i + 1];
+        state_t p3 = state->recode_map[(i + 2 < source_length) ? i + 2 : i + 1];
+        float segment_m = hypotf(p2.x - p1.x, p2.y - p1.y);
+        int samples = (int)(segment_m / (PORTION2_CURVE_SAMPLE_STEP_M * 0.5f)) + 2;
+
+        if(segment_m < PORTION2_CURVE_MIN_SEGMENT_M) continue;
+        if(samples < 4) samples = 4;
+        if(samples > 18) samples = 18;
+        for(int j = 1; j <= samples && state->planned_length < MAX_LENGTH_INDEX - 1; j++)
+        {
+            float t = (float)j / (float)samples;
+            state_t point = portion2_catmull_rom_point(p0, p1, p2, p3, t);
+            point = portion2_limit_curve_point_to_segment(point, p1, p2);
+            portion2_curve_append_point(state, point, 0U);
+        }
+    }
+
+    portion2_curve_append_point(state, state->recode_map[source_length - 1], 1U);
+    for(int16 i = 0; i < state->planned_length - 1; i++)
+    {
+        state->planned_map[i].theta = guandao_segment_yaw(state->planned_map[i], state->planned_map[i + 1]);
+    }
+    if(state->planned_length > 1)
+    {
+        state->planned_map[state->planned_length - 1].theta =
+                state->planned_map[state->planned_length - 2].theta;
+    }
+    state->plan_ready = (state->planned_length > 0) ? 1U : 0U;
+}
+
 void guandao_build_smooth_plan(guandao_state * state)
 {
     int16 source_length = guandao_clamp_length(state->length_index);
@@ -1355,6 +1529,11 @@ void guandao_build_smooth_plan(guandao_state * state)
     state->plan_ready = 0;
 
     if(source_length <= 0) return;
+    if(state == &portion_2)
+    {
+        portion2_build_curve_plan(state);
+        return;
+    }
     if(source_length < 3)
     {
         for(int i = 0; i < source_length; i++)
@@ -1732,6 +1911,12 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    }
    if(v_center < MIN_SPEED) v_center = MIN_SPEED;
 
+   if(state == &portion_2 && portion2_selected_route < PORTION2_GUIDED_ROUTE_COUNT
+           && dist_to_final <= PORTION2_FINAL_CRAWL_DIST
+           && v_center > PORTION2_FINAL_CRAWL_SPEED)
+   {
+       v_center = PORTION2_FINAL_CRAWL_SPEED;
+   }
 
    if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
     if(state == &portion_2)
@@ -1742,12 +1927,19 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
                 ? PORTION2_SNAKE_FINAL_STOP_DIST
                 : (portion2_selected_route < PORTION2_GUIDED_ROUTE_COUNT
                         ? PORTION2_GUIDED_FINAL_STOP_DIST : PORTION2_FINAL_RAW_POINT_STOP_DIST);
-        if(portion2_route12_overshoot_detect(raw_point, raw_length, dist_to_final)
-                || portion2_final_zone_overshoot_detect(raw_point, raw_length, dist_to_final))
-        {
-            state->current_point_index = route_length;
-            guandao_debug_stop_reason = (portion2_selected_route == PORTION2_ROUTE_SNAKE) ? 12 : 13;
-            *out_v_l = 0;
+         if(portion2_route12_overshoot_detect(raw_point, raw_length, dist_to_final)
+                 || portion2_final_zone_should_stop(raw_point, raw_length, dist_to_final, final_stop_distance))
+         {
+             uint8 align_result = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
+             if(align_result == PORTION2_FINAL_YAW_ALIGN_RUNNING)
+             {
+                 last_target_steering = 0.0f;
+                 last_steer_limit_ms = 0;
+                 return;
+             }
+             state->current_point_index = route_length;
+             guandao_debug_stop_reason = (portion2_selected_route == PORTION2_ROUTE_SNAKE) ? 12 : 13;
+             *out_v_l = 0;
             *out_v_r = 0;
             *out_servo = 0;
             last_target_steering = 0.0f;
@@ -1756,12 +1948,19 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
             portion2_final_zone_reset();
             return;
         }
-        if(raw_length > 0 && raw_point >= raw_length - 1
-                && dist_to_final <= final_stop_distance)
-        {
-            state->current_point_index = route_length;
-            guandao_debug_stop_reason = 8;
-            *out_v_l = 0;
+         if(raw_length > 0 && raw_point >= raw_length - 1
+                 && dist_to_final <= final_stop_distance)
+         {
+             uint8 align_result = portion2_final_yaw_align(final_point, dist_to_final, out_v_l, out_v_r, out_servo);
+             if(align_result == PORTION2_FINAL_YAW_ALIGN_RUNNING)
+             {
+                 last_target_steering = 0.0f;
+                 last_steer_limit_ms = 0;
+                 return;
+             }
+             state->current_point_index = route_length;
+             guandao_debug_stop_reason = 8;
+             *out_v_l = 0;
             *out_v_r = 0;
             *out_servo = 0;
             last_target_steering = 0.0f;
@@ -1797,6 +1996,9 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
    Value_Limit_float(&steer_delta, -steer_delta_limit, steer_delta_limit);
    target_steering = last_target_steering + steer_delta;
    Value_Limit_float(&target_steering ,-steering_limit,steering_limit);
+   guandao_debug_steer_cmd = target_steering;
+   guandao_debug_steer_limit = steering_limit;
+   guandao_debug_steer_rate = steering_rate_limit;
    last_target_steering = target_steering;
    last_steer_limit_ms = steer_now_ms;
 
@@ -2199,6 +2401,20 @@ uint8 portion2_is_running(void)
     return (portion2_state_flag != 0) ? 1 : 0;
 }
 
+static void portion2_record_update_final_yaw(void)
+{
+    uint16 len;
+    uint16 offset;
+
+    if(portion2_record_route >= PORTION2_ROUTE_COUNT) return;
+    len = portion2_route_length[portion2_record_route];
+    if(len == 0) return;
+    if(len > PORTION2_ROUTE_MAX_POINTS) len = PORTION2_ROUTE_MAX_POINTS;
+    offset = portion2_route_offset(portion2_record_route);
+    portion2_route_final_yaw[portion2_record_route] =
+            portion2_route_storage_get(offset + len - 1).theta;
+}
+
 static void portion2_record_point(void)
 {
     uint16 len = portion2_route_length[portion2_record_route];
@@ -2212,6 +2428,7 @@ static void portion2_record_point(void)
         portion2_route_storage_set(offset, passage.current_state);
         portion2_route_length[portion2_record_route] = 1;
         portion2_route_saved_flag[portion2_record_route] = 0;
+        portion2_record_update_final_yaw();
         portion2_serial_write_state_point("[P2-REC]", portion2_record_route, 0, passage.current_state);
         return;
     }
@@ -2221,6 +2438,7 @@ static void portion2_record_point(void)
         portion2_route_storage_set(offset + len, passage.current_state);
         portion2_route_length[portion2_record_route]++;
         portion2_route_saved_flag[portion2_record_route] = 0;
+        portion2_record_update_final_yaw();
         portion2_serial_write_state_point("[P2-REC]", portion2_record_route, len, passage.current_state);
     }
 }
@@ -2851,6 +3069,7 @@ void portion2_record_task(void)
     }
     if(k2_long)
     {
+        portion2_record_update_final_yaw();
         Flash_Write_passage_points();
         portion2_route_saved_flag[portion2_record_route] = (portion2_route_length[portion2_record_route] > 0) ? 1 : 0;
         portion2_serial_log_record_event("SAVE");
@@ -3313,9 +3532,10 @@ void portion2_run_task(void)
             ips200_show_int(X(6), Y(14), portion2_run_reject_reason, 2);
             ips200_show_string(X(11), Y(14), "REV");
             ips200_show_int(X(16), Y(14), portion2_run_drive_reverse ? 2 : portion2_run_reverse, 1);
-            ips200_show_string(X(1), Y(15), "GERR");
-            ips200_show_float(X(7), Y(15), portion2_gps_fusion_get_error(), 6, 2);
-            ips200_show_string(X(14), Y(15), "m");
+            ips200_show_string(X(1), Y(15), "ST");
+            ips200_show_float(X(4), Y(15), out_servo, 6, 2);
+            ips200_show_string(X(11), Y(15), "L");
+            ips200_show_float(X(13), Y(15), guandao_debug_steer_limit, 5, 1);
         }
     }
 }

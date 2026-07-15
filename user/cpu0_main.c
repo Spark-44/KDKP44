@@ -963,9 +963,9 @@ int core0_main(void)
 
     Init_All();                         
     rear_motor_init();                  
-    /* UART1 is assigned to offline voice on P11.12/P11.10.
-       Keep the TLD7002/dot-matrix side disabled; the right-side screen remains in use. */
-//    dot_matrix_screen_init();
+    /* UART1 is reserved for the TLD7002 dot-matrix driver in RUN serial
+       light-pattern tests, so offline voice is left disabled below. */
+    dot_matrix_screen_init();
     servo_init();
     gpio_init(PORTION2_ALL_LIGHT_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
     remote_control_init();
@@ -997,13 +997,11 @@ int core0_main(void)
                 if(!voice_inited)
                 {
                     screen_init();
-                    offline_voice_init(Portion2_Voice_Command_Handle, 0);
                     voice_inited = 1;
                     ips200_clear();
                 }
                 Portion2_Run_Mode_Key_Handle();
-                offline_voice_poll();
-//                Portion2_Dot_Matrix_Scan_Update();
+                Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
                 if(subject_2_gyro_route_is_active())
                 {
