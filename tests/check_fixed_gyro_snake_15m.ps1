@@ -55,9 +55,13 @@ Assert-Contains $fixed 'subject_2_fixed_action_state\.snake_phase\s*==\s*SUBJECT
 Assert-Contains $fixed 'distance_m\s*>=\s*SUBJECT_2_GYRO_SNAKE_DISTANCE_M' `
     'gyro snake must stop by encoder distance'
 
-Assert-Contains $main "data\s*==\s*'Z'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M\)" `
-    'serial Z must start forward gyro snake 15m'
-Assert-Contains $main "data\s*==\s*'z'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M\)" `
-    'serial z must start reverse gyro snake 15m'
+Assert-Contains $main "data\s*==\s*'W'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M\)" `
+    'serial W must start forward gyro snake 15m'
+Assert-Contains $main "data\s*==\s*'w'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M\)" `
+    'serial w must start forward gyro snake 15m'
+Assert-Contains $main "data\s*==\s*'V'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M\)" `
+    'serial V must start reverse gyro snake 15m'
+Assert-Contains $main "data\s*==\s*'v'[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M\)" `
+    'serial v must start reverse gyro snake 15m'
 
 Write-Host 'fixed gyro snake 15m checks passed'

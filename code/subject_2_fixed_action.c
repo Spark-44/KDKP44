@@ -1,15 +1,10 @@
 #include "subject_2_fixed_action.h"
-#include "subject_2_gyro_route.h"
 #include "zf_common_headfile.h"
 #include "rear_motor/rear_motor.h"
 
 #define SUBJECT_2_FIXED_GUANDAO_SPEED_TO_MPS (0.1f)
-#define SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS (0.35f)
 #define SUBJECT_2_FIXED_TURN_SPEED_MPS     (1.0f)
-#define SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M (10.0f)
 #define SUBJECT_2_FIXED_TURN_PRE_DISTANCE_M (2.0f)
-#define SUBJECT_2_FIXED_SNAKE_DISTANCE_M    (10.0f)
-#define SUBJECT_2_FIXED_SNAKE_PERIOD_MS     (1000U)
 #define SUBJECT_2_FIXED_TURN_ANGLE_DEG     (90.0f)
 #define SUBJECT_2_FIXED_TURN_TIMEOUT_MS     (60000U)
 #define SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG   (360.0f)
@@ -29,10 +24,10 @@
 #define SUBJECT_2_ENCODER_YAW_STALL_MS     (3000U)
 #define SUBJECT_2_ENCODER_YAW_PROGRESS_M   (0.002f)
 #define SUBJECT_2_ENCODER_YAW_MAX_DELTA    (1000)
-#define SUBJECT_2_GYRO_SNAKE_SPEED_MPS     (1.5f)
-#define SUBJECT_2_GYRO_SNAKE_DISTANCE_M    (20.0f)
+#define SUBJECT_2_GYRO_SNAKE_SPEED_MPS     (1.0f)
+#define SUBJECT_2_GYRO_SNAKE_DISTANCE_M    (15.0f)
 #define SUBJECT_2_GYRO_SNAKE_STEER_DEG     (20.0f)
-#define SUBJECT_2_GYRO_SNAKE_YAW_THRESHOLD_DEG (45.0f)
+#define SUBJECT_2_GYRO_SNAKE_YAW_THRESHOLD_DEG (40.0f)
 #define SUBJECT_2_GYRO_SNAKE_CENTER_DISTANCE_M (0.8f)
 #define SUBJECT_2_GYRO_SNAKE_STALL_MS      SUBJECT_2_ENCODER_YAW_STALL_MS
 
@@ -82,10 +77,6 @@ typedef struct
 
 static const subject_2_fixed_action_t subject_2_fixed_actions[] =
 {
-    {VOICE_DRIVE_ACTION_FORWARD_10M,        SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS,  0.0f,                         SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M, SUBJECT_2_FIXED_STOP_DISTANCE},
-    {VOICE_DRIVE_ACTION_BACKWARD_10M,      -SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS,  0.0f,                         SUBJECT_2_FIXED_STRAIGHT_DISTANCE_M, SUBJECT_2_FIXED_STOP_DISTANCE},
-    {VOICE_DRIVE_ACTION_SNAKE_FORWARD_10M,  SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,    SUBJECT_2_FIXED_SNAKE_DISTANCE_M,    SUBJECT_2_FIXED_STOP_DISTANCE},
-    {VOICE_DRIVE_ACTION_SNAKE_BACKWARD_10M,-SUBJECT_2_FIXED_STRAIGHT_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,    SUBJECT_2_FIXED_SNAKE_DISTANCE_M,    SUBJECT_2_FIXED_STOP_DISTANCE},
     {VOICE_DRIVE_ACTION_CCW_CIRCLE,          SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
     {VOICE_DRIVE_ACTION_CW_CIRCLE,           SUBJECT_2_FIXED_TURN_SPEED_MPS, -SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_CIRCLE_ANGLE_DEG, SUBJECT_2_FIXED_STOP_YAW},
     {VOICE_DRIVE_ACTION_TURN_LEFT,           SUBJECT_2_FIXED_TURN_SPEED_MPS,  SUBJECT_2_FIXED_STEER_DEG,       SUBJECT_2_FIXED_TURN_ANGLE_DEG,   SUBJECT_2_FIXED_STOP_YAW},
@@ -560,14 +551,6 @@ static void subject_2_fixed_action_update(voice_drive_action_mode_t mode, uint32
         }
     }
 
-    if(mode == VOICE_DRIVE_ACTION_SNAKE_FORWARD_10M || mode == VOICE_DRIVE_ACTION_SNAKE_BACKWARD_10M)
-    {
-        if(((elapsed_ms / SUBJECT_2_FIXED_SNAKE_PERIOD_MS) % 2U) != 0U)
-        {
-            output->steer_deg = -action->steer_deg;
-        }
-    }
-
     if(action->stop_type == SUBJECT_2_FIXED_STOP_DISTANCE && distance_m >= action->stop_value)
     {
         output->finished = 1;
@@ -620,7 +603,6 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
 {
     uint8 uses_straight_yaw;
 
-    subject_2_gyro_route_stop("FIXED_ACTION");
     voice_drive_action_stop();
     subject_2_fixed_action_state.mode = mode;
     subject_2_fixed_action_state.start_ms = system_getval_ms();
