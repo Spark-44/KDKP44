@@ -244,7 +244,6 @@ IFX_INTERRUPT(uart1_tx_isr, 0, UART1_TX_INT_PRIO)
 IFX_INTERRUPT(uart1_rx_isr, 0, UART1_RX_INT_PRIO)
 {
     interrupt_global_enable(0);                     
-    offline_voice_uart_rx_handler();
 }
 
 IFX_INTERRUPT(uart2_tx_isr, 0, UART2_TX_INT_PRIO)

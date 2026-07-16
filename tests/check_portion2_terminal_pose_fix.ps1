@@ -34,10 +34,10 @@ Assert-Match $guandao 'portion2_route_final_yaw\[portion2_record_route\]\s*=\s*p
 Assert-Match $guandao 'if\(k2_long\)[\s\S]*?portion2_record_update_final_yaw\s*\(\s*\)[\s\S]*?Flash_Write_passage_points\s*\(\s*\)' `
     'saving a route while still recording must capture the latest endpoint yaw before writing flash.'
 
-Assert-Match $guandao 'yaw_steering\s*=\s*yaw_error\s*\*\s*PORTION2_GUIDED_FINAL_YAW_GAIN' `
-    'guided terminal yaw steering must use the same sign as yaw error so positive yaw error commands a left correction and negative commands right correction according to the existing steering convention.'
+Assert-Match $guandao 'yaw_steering\s*=\s*yaw_error\s*\*\s*portion2_terminal_yaw_gain\s*\(\s*\)' `
+    'guided terminal yaw steering must use the same sign as yaw error through the per-route terminal yaw gain helper.'
 
-Assert-NotMatch $guandao 'yaw_steering\s*=\s*-yaw_error\s*\*\s*PORTION2_GUIDED_FINAL_YAW_GAIN' `
+Assert-NotMatch $guandao 'yaw_steering\s*=\s*-yaw_error\s*\*\s*portion2_terminal_yaw_gain\s*\(\s*\)' `
     'guided terminal yaw steering must not invert yaw error.'
 
 Assert-Match $guandao 'uint8\s+align_result\s*=\s*portion2_final_yaw_align\s*\(\s*final_point,\s*dist_to_final,\s*out_v_l,\s*out_v_r,\s*out_servo\s*\)' `

@@ -19,12 +19,12 @@ $sourcePath = Join-Path $root 'code\angle_control.c'
 $header = Get-Content $headerPath -Raw
 $source = Get-Content $sourcePath -Raw
 
-Assert-Contains $header '#define\s+ANGLE_DEFAULT_KP\s+500\.0f' 'Angle Kp must be 500.0f.'
-Assert-Contains $header '#define\s+ANGLE_DEFAULT_KI\s+18\.0f' 'Angle Ki must be 18.0f.'
-Assert-Contains $header '#define\s+ANGLE_DEFAULT_KD\s+27\.0f' 'Angle Kd must be 27.0f.'
+Assert-Contains $header '#define\s+ANGLE_DEFAULT_KP\s+1000\.0f' 'Angle Kp must be 1000.0f.'
+Assert-Contains $header '#define\s+ANGLE_DEFAULT_KI\s+15\.0f' 'Angle Ki must be 15.0f.'
+Assert-Contains $header '#define\s+ANGLE_DEFAULT_KD\s+40\.0f' 'Angle Kd must be 40.0f.'
 Assert-Contains $header '#define\s+ANGLE_OUTPUT_MAX\s+10000' 'Angle output limit must remain +/-10000.'
 Assert-Contains $header '#define\s+ANGLE_DEAD_BAND\s+0\.1f' 'Angle dead band must be 0.1 degree.'
-Assert-Contains $header '#define\s+ANGLE_FEED_FORWARD\s+65\.0f' 'Angle feed-forward must be 65.'
+Assert-Contains $header '#define\s+ANGLE_FEED_FORWARD\s+80\.0f' 'Angle feed-forward must be 80.'
 Assert-Contains $header '#define\s+ANGLE_INTEGRAL_MAX\s+1000\.0f' 'Angle integral maximum must remain 1000.0f.'
 
 Assert-Contains $source 'angle_ctrl\.pid\.IntegralMax\s*=\s*ANGLE_INTEGRAL_MAX' 'Angle control must set IntegralMax to the angle-specific limit after PID init.'

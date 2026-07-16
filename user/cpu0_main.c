@@ -9,7 +9,7 @@
 #include "display.h"
 #include "serial_menu.h"
 #include <stdio.h>
-#pragma section all "cpu0_dsram"
+#pragma section all "cpu0_dsram"-
 
 extern int num;
 static uint8 voice_inited = 0;
@@ -18,6 +18,7 @@ static uint8 voice_inited = 0;
 #define PORTION2_DRIVE_SPEED_STEP_MPS (1.0f)
 #define PORTION2_DRIVE_SPEED_MAX_MPS  (5.0f)
 #define PORTION2_DRIVE_GPS_SERIAL_PERIOD_MS (500U)
+
 
 static float portion2_drive_target_mps = 0.0f;
 static uint8 portion2_drive_full_power = 0;
@@ -778,6 +779,26 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         portion2_run_stop();
         subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_14, 1U);
     }
+    else if(data == 'Z')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M);
+    }
+    else if(data == 'z')
+    {
+        reverse_route_pending = 0;
+        dump_route_pending = 0;
+        portion2_run_last_rx = data;
+        portion2_run_rx_count++;
+        uart_write_byte(DEBUG_UART_INDEX, data);
+        uart_write_string(DEBUG_UART_INDEX, "\r\n");
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M);
+    }
     else
     {
         reverse_route_pending = 0;
@@ -963,8 +984,6 @@ int core0_main(void)
 
     Init_All();                         
     rear_motor_init();                  
-    /* UART1 is reserved for the TLD7002 dot-matrix driver in RUN serial
-       light-pattern tests, so offline voice is left disabled below. */
     dot_matrix_screen_init();
     servo_init();
     gpio_init(PORTION2_ALL_LIGHT_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);

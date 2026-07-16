@@ -16,12 +16,12 @@
 #define ANGLE_GEAR_RATIO    300                    
 #define ANGLE_MAX_DEGREE    60                     
 #define ANGLE_MIN_DEGREE    -60
-#define ANGLE_DEFAULT_KP    500.0f
-#define ANGLE_DEFAULT_KI    18.0f
-#define ANGLE_DEFAULT_KD    27.0f
+#define ANGLE_DEFAULT_KP    1000.0f
+#define ANGLE_DEFAULT_KI    15.0f
+#define ANGLE_DEFAULT_KD    40.0f
 #define ANGLE_OUTPUT_MAX    10000
 #define ANGLE_DEAD_BAND     0.1f
-#define ANGLE_FEED_FORWARD  65.0f
+#define ANGLE_FEED_FORWARD  80.0f
 #define ANGLE_INTEGRAL_MAX  1000.0f
 
 typedef struct {

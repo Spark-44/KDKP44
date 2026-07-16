@@ -8,6 +8,7 @@
 #define OFFLINE_VOICE_MSG_RX          (0x81)
 #define OFFLINE_VOICE_MSG_TX          (0x82)
 #define OFFLINE_VOICE_TAIL            (0xFB)
+#define OFFLINE_VOICE_KEEPALIVE_MS    (12000U)
 typedef enum
 {
     OFFLINE_VOICE_STATE_IDLE = 0,
@@ -23,6 +24,7 @@ static offline_voice_cmd_callback_t offline_voice_callback = 0;
 static void *offline_voice_user_data = 0;
 static offline_voice_stats_t offline_voice_stats = {0};
 static uint32 offline_voice_last_stat_ms = 0;
+static uint32 offline_voice_last_valid_ms = 0;
 #pragma section all restore
 
 static void offline_voice_debug_hex(uint8 value)
@@ -34,6 +36,22 @@ static void offline_voice_debug_hex(uint8 value)
 static void offline_voice_debug_stats(void)
 {
     offline_voice_last_stat_ms = system_getval_ms();
+}
+
+static void offline_voice_send_wakeup(void)
+{
+    offline_voice_send_response(OFFLINE_VOICE_CMD_WAKEUP);
+    offline_voice_last_valid_ms = system_getval_ms();
+}
+
+static void offline_voice_keepalive(void)
+{
+    uint32 now = system_getval_ms();
+
+    if((uint32)(now - offline_voice_last_valid_ms) >= OFFLINE_VOICE_KEEPALIVE_MS)
+    {
+        offline_voice_send_wakeup();
+    }
 }
 
 static uint8 offline_voice_calc_checksum(const uint8 *frame)
@@ -83,12 +101,18 @@ static void offline_voice_handle_frame(void)
     cmd_id = offline_voice_frame_buf[4];
     offline_voice_stats.last_cmd_id = cmd_id;
     offline_voice_stats.valid_frames++;
+    offline_voice_last_valid_ms = system_getval_ms();
 
     offline_voice_send_response(cmd_id);
 
-    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART1] CMD_ID=0x");
+    uart_write_string(DEBUG_UART_INDEX, "[VOICE-UART2] CMD_ID=0x");
     offline_voice_debug_hex(cmd_id);
     uart_write_string(DEBUG_UART_INDEX, "\r\n");
+
+    if(cmd_id == OFFLINE_VOICE_CMD_SLEEP)
+    {
+        offline_voice_send_wakeup();
+    }
 
     if(offline_voice_callback != 0)
     {
@@ -104,6 +128,7 @@ void offline_voice_init(offline_voice_cmd_callback_t callback, void *user_data)
     offline_voice_user_data = user_data;
     offline_voice_reset_stats();
     offline_voice_reset_parser();
+    offline_voice_last_valid_ms = system_getval_ms();
     uart_init(OFFLINE_VOICE_UART_INDEX,
               OFFLINE_VOICE_UART_BAUD,
               OFFLINE_VOICE_UART_TX_PIN,
@@ -120,6 +145,7 @@ void offline_voice_poll(void)
         offline_voice_feed_byte(data);
     }
     offline_voice_debug_stats();
+    offline_voice_keepalive();
 }
 
 void offline_voice_uart_rx_handler(void)

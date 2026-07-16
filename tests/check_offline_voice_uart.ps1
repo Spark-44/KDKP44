@@ -24,10 +24,26 @@ $source = Get-Content -Raw $sourcePath
 $isr = Get-Content -Raw $isrPath
 $main = Get-Content -Raw $mainPath
 
+function Get-IsrBlock {
+    param(
+        [string]$Text,
+        [string]$Name
+    )
+    $pattern = "IFX_INTERRUPT\s*\(\s*$Name[\s\S]*?\n\}"
+    $match = [regex]::Match($Text, $pattern)
+    if(-not $match.Success) {
+        throw "Missing ISR block: $Name"
+    }
+    return $match.Value
+}
+
+$uart1RxIsr = Get-IsrBlock $isr 'uart1_rx_isr'
+$uart2RxIsr = Get-IsrBlock $isr 'uart2_rx_isr'
+
 foreach($pattern in @(
-    '#define\s+OFFLINE_VOICE_UART_INDEX\s+\(UART_1\)',
-    '#define\s+OFFLINE_VOICE_UART_TX_PIN\s+\(UART1_TX_P11_12\)',
-    '#define\s+OFFLINE_VOICE_UART_RX_PIN\s+\(UART1_RX_P11_10\)'
+    '#define\s+OFFLINE_VOICE_UART_INDEX\s+\(UART_2\)',
+    '#define\s+OFFLINE_VOICE_UART_TX_PIN\s+\(UART2_TX_P10_5\)',
+    '#define\s+OFFLINE_VOICE_UART_RX_PIN\s+\(UART2_RX_P10_6\)'
 )) {
     if($header -notmatch $pattern) {
         throw "Offline voice UART pin setting is missing: $pattern"
@@ -35,7 +51,7 @@ foreach($pattern in @(
 }
 
 foreach($pattern in @(
-    '\[VOICE-UART1\]\s+CMD_ID=0x'
+    '\[VOICE-UART2\]\s+CMD_ID=0x'
 )) {
     if($source -notmatch $pattern) {
         throw "Offline voice command event label is missing: $pattern"
@@ -43,35 +59,41 @@ foreach($pattern in @(
 }
 
 foreach($pattern in @(
-    '\[VOICE-UART1\]\s+init\s+9600\s+TX=P11\.12\s+RX=P11\.10',
-    '\[VOICE-UART1\]\s+bytes='
+    '\[VOICE-UART2\]\s+init\s+9600\s+TX=P10\.5\s+RX=P10\.6',
+    '\[VOICE-UART2\]\s+bytes='
 )) {
     if($source -match $pattern) {
         throw "Offline voice automatic debug output must stay disabled: $pattern"
     }
 }
 
-if($source -match 'VOICE-UART2|UART2_TX_P10_5|UART2_RX_P10_6') {
-    throw 'Offline voice code still contains old UART2/P10.5/P10.6 identifiers.'
+if($source -match 'VOICE-UART1|UART1_TX_P11_12|UART1_RX_P11_10') {
+    throw 'Offline voice code still contains old UART1/P11.12/P11.10 identifiers.'
 }
 
-if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART1 RX interrupt must feed offline_voice_uart_rx_handler().'
+if($uart2RxIsr -match 'offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART2 RX interrupt must not feed offline voice while UART2 is assigned to the remote receiver.'
 }
-if($isr -match 'IFX_INTERRUPT\s*\(\s*uart2_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART2 RX interrupt must no longer feed offline voice.'
+if($uart1RxIsr -match 'offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART1 RX interrupt must no longer feed offline voice.'
 }
-if($isr -match 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?tld7002_callback\s*\(\s*\)') {
-    throw 'UART1 RX interrupt must no longer be consumed by TLD7002 when UART1 is assigned to offline voice.'
+if($uart2RxIsr -notmatch 'uart_receiver_handler\s*\(\s*\)') {
+    throw 'UART2 RX interrupt must be consumed by the remote receiver while voice is disabled.'
 }
-if($main -match '(?m)^\s*dot_matrix_screen_init\s*\(\s*\)\s*;') {
-    throw 'Dot-matrix/TLD7002 init must be disabled when UART1 is assigned to offline voice.'
+if($main -notmatch '(?m)^\s*dot_matrix_screen_init\s*\(\s*\)\s*;') {
+    throw 'Dot-matrix/TLD7002 init must remain enabled on UART1.'
 }
-if($main -match '(?m)^\s*Portion2_Dot_Matrix_Scan_Update\s*\(\s*\)\s*;') {
-    throw 'Voice mode must not scan dot-matrix/TLD7002 while UART1 is assigned to offline voice.'
+if($main -notmatch '(?m)^\s*Portion2_Dot_Matrix_Scan_Update\s*\(\s*\)\s*;') {
+    throw 'Voice mode must keep scanning dot-matrix/TLD7002 on UART1.'
 }
-if($isr -match '(?m)^\s*dot_matrix_screen_scan\s*\(\s*\)\s*;') {
-    throw 'Dot-matrix EXTI scan must be disabled when UART1 is assigned to offline voice.'
+if($main -match '(?m)^\s*offline_voice_init\s*\(') {
+    throw 'Offline voice low-level driver may remain configured, but main must not initialize it while UART2 is assigned to the remote receiver.'
+}
+if($main -match '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
+    throw 'Offline voice must not be polled while UART2 is assigned to the remote receiver.'
+}
+if($main -notmatch '(?m)^\s*remote_control_init\s*\(\s*\)\s*;' -or $main -notmatch '(?m)^\s*remote_control_task\s*\(\s*\)\s*;') {
+    throw 'Remote receiver must initialize and run when UART2 is assigned to the remote receiver.'
 }
 
-Write-Output 'Offline voice UART1/P11.10/P11.12 checks passed.'
+Write-Output 'Offline voice low-level UART2 config preserved while remote receiver owns UART2.'

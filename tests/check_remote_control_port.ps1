@@ -181,20 +181,26 @@ if($isr -match 'IFX_INTERRUPT\s*\(\s*uart3_rx_isr[\s\S]*?uart_receiver_handler\s
 if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart3_rx_isr[\s\S]*?gnss_uart_callback\s*\(\s*\)') {
     throw 'UART3 RX ISR must keep GNSS callback.'
 }
-if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART1 RX ISR must keep offline voice callback.'
+if($isr -match 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART1 RX ISR must not dispatch offline voice while voice is disabled.'
+}
+if($isr -match 'IFX_INTERRUPT\s*\(\s*uart2_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART2 RX ISR must not dispatch offline voice while the remote receiver owns UART2.'
 }
 
 foreach($pattern in @(
     'remote_control_init\s*\(\s*\)',
     'while\s*\(\s*TRUE\s*\)[\s\S]*?remote_control_task\s*\(\s*\)\s*;',
     'case\s+Guandao_Portion2_Recode\s*:[\s\S]*?portion2_record_task\s*\(\s*\)[\s\S]*?if\s*\(\s*remote_control_is_active\s*\(\s*\)\s*\)[\s\S]*?continue\s*;',
-    'case\s+Guandao_Voice\s*:[\s\S]*?offline_voice_poll\s*\(\s*\)',
     'case\s+Guandao_Drive\s*:[\s\S]*?Portion2_Drive_Mode_Task\s*\(\s*\)'
 )) {
     if($main -notmatch $pattern) {
         throw "Main loop missing remote control integration: $pattern"
     }
+}
+
+if($main -match '(?m)^\s*offline_voice_init\s*\(' -or $main -match '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
+    throw 'Offline voice must not initialize or poll while the remote receiver owns UART2.'
 }
 
 if($main -match 'case\s+Guandao_Voice\s*:[\s\S]*?remote_control_stop\s*\(\s*\)') {

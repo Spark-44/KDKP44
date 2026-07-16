@@ -16,6 +16,8 @@ typedef enum
     VOICE_DRIVE_ACTION_TURN_RIGHT,
     VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M,
     VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M,
+    VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M,
+    VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M,
 } voice_drive_action_mode_t;
 
 void voice_drive_action_start(voice_drive_action_mode_t mode);

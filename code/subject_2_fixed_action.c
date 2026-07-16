@@ -29,6 +29,12 @@
 #define SUBJECT_2_ENCODER_YAW_STALL_MS     (3000U)
 #define SUBJECT_2_ENCODER_YAW_PROGRESS_M   (0.002f)
 #define SUBJECT_2_ENCODER_YAW_MAX_DELTA    (1000)
+#define SUBJECT_2_GYRO_SNAKE_SPEED_MPS     (1.5f)
+#define SUBJECT_2_GYRO_SNAKE_DISTANCE_M    (20.0f)
+#define SUBJECT_2_GYRO_SNAKE_STEER_DEG     (20.0f)
+#define SUBJECT_2_GYRO_SNAKE_YAW_THRESHOLD_DEG (45.0f)
+#define SUBJECT_2_GYRO_SNAKE_CENTER_DISTANCE_M (0.8f)
+#define SUBJECT_2_GYRO_SNAKE_STALL_MS      SUBJECT_2_ENCODER_YAW_STALL_MS
 
 typedef enum
 
@@ -67,6 +73,11 @@ typedef struct
     float progress_distance_mark;
     uint32 last_control_ms;
     uint32 last_progress_ms;
+    int8 snake_steer_side;
+    int8 snake_next_steer_side;
+    int8 snake_target_side;
+    uint8 snake_phase;
+    float snake_center_start_distance_m;
 } subject_2_fixed_action_state_t;
 
 static const subject_2_fixed_action_t subject_2_fixed_actions[] =
@@ -88,6 +99,12 @@ typedef enum
     SUBJECT_2_FIXED_TURN_PHASE_TURN,
 } subject_2_fixed_turn_phase_t;
 
+typedef enum
+{
+    SUBJECT_2_GYRO_SNAKE_PHASE_TURNING = 0,
+    SUBJECT_2_GYRO_SNAKE_PHASE_CENTER_HOLD,
+} subject_2_gyro_snake_phase_t;
+
 static subject_2_fixed_action_state_t subject_2_fixed_action_state =
 {
     VOICE_DRIVE_ACTION_NONE,
@@ -107,7 +124,11 @@ static subject_2_fixed_action_state_t subject_2_fixed_action_state =
     0.0f,
     0.0f,
     0,
-    0
+    0,
+    0,
+    0,
+    SUBJECT_2_GYRO_SNAKE_PHASE_TURNING,
+    0.0f
 };
 
 static float subject_2_fixed_abs_float(float value)
@@ -133,6 +154,12 @@ static uint8 subject_2_fixed_is_encoder_yaw_action(voice_drive_action_mode_t mod
 {
     return (mode == VOICE_DRIVE_ACTION_ENCODER_YAW_FORWARD_10M
             || mode == VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M) ? 1U : 0U;
+}
+
+static uint8 subject_2_fixed_is_gyro_snake_action(voice_drive_action_mode_t mode)
+{
+    return (mode == VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M
+            || mode == VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M) ? 1U : 0U;
 }
 
 static void subject_2_fixed_apply(float speed_mps, float steer_deg);
@@ -299,6 +326,81 @@ static void subject_2_encoder_yaw_task(uint32 now_ms)
     subject_2_fixed_apply(subject_2_fixed_action_state.speed_command,
                           subject_2_fixed_action_state.steer_command);
     subject_2_encoder_yaw_log("RUN", "NONE", 0U);
+}
+
+static void subject_2_gyro_snake_task(uint32 now_ms)
+{
+    int16 encoder_now = l_ecdcounter();
+    int32 encoder_delta = calculate_delta(encoder_now, subject_2_fixed_action_state.encoder_last_count);
+    float distance_step = 0.0f;
+    float relative_yaw;
+    float speed_mps;
+    float steer_deg;
+
+    subject_2_fixed_action_state.encoder_last_count = encoder_now;
+    subject_2_fixed_action_state.encoder_delta_last = encoder_delta;
+    if(encoder_delta <= SUBJECT_2_ENCODER_YAW_MAX_DELTA && encoder_delta >= -SUBJECT_2_ENCODER_YAW_MAX_DELTA)
+    {
+        distance_step = subject_2_fixed_abs_float((float)encoder_delta) * ONE_TICK_DISTANCE;
+        subject_2_fixed_action_state.distance_m += distance_step;
+        if(subject_2_fixed_action_state.distance_m - subject_2_fixed_action_state.progress_distance_mark
+                >= SUBJECT_2_ENCODER_YAW_PROGRESS_M)
+        {
+            subject_2_fixed_action_state.last_progress_ms = now_ms;
+            subject_2_fixed_action_state.progress_distance_mark = subject_2_fixed_action_state.distance_m;
+        }
+    }
+
+    if(subject_2_fixed_action_state.distance_m >= SUBJECT_2_GYRO_SNAKE_DISTANCE_M)
+    {
+        subject_2_encoder_yaw_finish("DISTANCE");
+        return;
+    }
+    if((uint32)(now_ms - subject_2_fixed_action_state.last_progress_ms) >= SUBJECT_2_GYRO_SNAKE_STALL_MS)
+    {
+        subject_2_encoder_yaw_finish("STALL");
+        return;
+    }
+
+    relative_yaw = subject_2_fixed_yaw_step(Yaw_Straight_1, subject_2_fixed_action_state.yaw_target);
+    if(subject_2_fixed_action_state.snake_phase == SUBJECT_2_GYRO_SNAKE_PHASE_CENTER_HOLD)
+    {
+        if(subject_2_fixed_action_state.distance_m - subject_2_fixed_action_state.snake_center_start_distance_m
+                >= SUBJECT_2_GYRO_SNAKE_CENTER_DISTANCE_M)
+        {
+            subject_2_fixed_action_state.snake_steer_side = subject_2_fixed_action_state.snake_next_steer_side;
+            subject_2_fixed_action_state.snake_phase = SUBJECT_2_GYRO_SNAKE_PHASE_TURNING;
+        }
+    }
+    else if(subject_2_fixed_action_state.snake_target_side == 0)
+    {
+        if(subject_2_fixed_abs_float(relative_yaw) >= SUBJECT_2_GYRO_SNAKE_YAW_THRESHOLD_DEG)
+        {
+            int8 reached_side = (relative_yaw >= 0.0f) ? 1 : -1;
+            subject_2_fixed_action_state.snake_target_side = -reached_side;
+            subject_2_fixed_action_state.snake_next_steer_side = -subject_2_fixed_action_state.snake_steer_side;
+            subject_2_fixed_action_state.snake_steer_side = 0;
+            subject_2_fixed_action_state.snake_center_start_distance_m = subject_2_fixed_action_state.distance_m;
+            subject_2_fixed_action_state.snake_phase = SUBJECT_2_GYRO_SNAKE_PHASE_CENTER_HOLD;
+        }
+    }
+    else if(relative_yaw * (float)subject_2_fixed_action_state.snake_target_side
+            >= SUBJECT_2_GYRO_SNAKE_YAW_THRESHOLD_DEG)
+    {
+        subject_2_fixed_action_state.snake_target_side = -subject_2_fixed_action_state.snake_target_side;
+        subject_2_fixed_action_state.snake_next_steer_side = -subject_2_fixed_action_state.snake_steer_side;
+        subject_2_fixed_action_state.snake_steer_side = 0;
+        subject_2_fixed_action_state.snake_center_start_distance_m = subject_2_fixed_action_state.distance_m;
+        subject_2_fixed_action_state.snake_phase = SUBJECT_2_GYRO_SNAKE_PHASE_CENTER_HOLD;
+    }
+
+    speed_mps = (subject_2_fixed_action_state.mode == VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M)
+            ? -SUBJECT_2_GYRO_SNAKE_SPEED_MPS : SUBJECT_2_GYRO_SNAKE_SPEED_MPS;
+    steer_deg = (subject_2_fixed_action_state.snake_phase == SUBJECT_2_GYRO_SNAKE_PHASE_CENTER_HOLD)
+            ? 0.0f : (float)subject_2_fixed_action_state.snake_steer_side * SUBJECT_2_GYRO_SNAKE_STEER_DEG;
+    subject_2_fixed_action_state.speed_command = speed_mps;
+    subject_2_fixed_action_state.steer_command = steer_deg;
+    subject_2_fixed_apply(speed_mps, steer_deg);
 }
 
 static void subject_2_turn_pre_straight_task(uint32 now_ms)
@@ -503,6 +605,11 @@ void voice_drive_action_stop(void)
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
     subject_2_fixed_action_state.last_control_ms = 0;
     subject_2_fixed_action_state.last_progress_ms = 0;
+    subject_2_fixed_action_state.snake_steer_side = 0;
+    subject_2_fixed_action_state.snake_next_steer_side = 0;
+    subject_2_fixed_action_state.snake_target_side = 0;
+    subject_2_fixed_action_state.snake_phase = SUBJECT_2_GYRO_SNAKE_PHASE_TURNING;
+    subject_2_fixed_action_state.snake_center_start_distance_m = 0.0f;
     out_v_l = 0.0f;
     out_v_r = 0.0f;
     out_servo = 0.0f;
@@ -520,7 +627,9 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
     subject_2_fixed_action_state.last_ms = subject_2_fixed_action_state.start_ms;
     subject_2_fixed_action_state.distance_m = 0.0f;
     subject_2_fixed_action_state.phase_distance_m = 0.0f;
-    uses_straight_yaw = (subject_2_fixed_is_encoder_yaw_action(mode) || subject_2_fixed_is_turn_action(mode)) ? 1U : 0U;
+    uses_straight_yaw = (subject_2_fixed_is_encoder_yaw_action(mode)
+            || subject_2_fixed_is_gyro_snake_action(mode)
+            || subject_2_fixed_is_turn_action(mode)) ? 1U : 0U;
     subject_2_fixed_action_state.yaw_last = uses_straight_yaw ? Yaw_Straight_1 : Yaw_1;
     subject_2_fixed_action_state.yaw_delta = 0.0f;
     subject_2_fixed_action_state.yaw_target = uses_straight_yaw ? Yaw_Straight_1 : Yaw_1;
@@ -534,6 +643,11 @@ void voice_drive_action_start(voice_drive_action_mode_t mode)
     subject_2_fixed_action_state.progress_distance_mark = 0.0f;
     subject_2_fixed_action_state.last_control_ms = subject_2_fixed_action_state.start_ms;
     subject_2_fixed_action_state.last_progress_ms = subject_2_fixed_action_state.start_ms;
+    subject_2_fixed_action_state.snake_steer_side = subject_2_fixed_is_gyro_snake_action(mode) ? 1 : 0;
+    subject_2_fixed_action_state.snake_next_steer_side = 0;
+    subject_2_fixed_action_state.snake_target_side = 0;
+    subject_2_fixed_action_state.snake_phase = SUBJECT_2_GYRO_SNAKE_PHASE_TURNING;
+    subject_2_fixed_action_state.snake_center_start_distance_m = 0.0f;
     conrtol_mode = GUANDAO;
     if(subject_2_fixed_is_encoder_yaw_action(mode) || subject_2_fixed_is_turn_action(mode))
     {
@@ -561,6 +675,11 @@ void voice_drive_action_task(void)
     if(subject_2_fixed_is_encoder_yaw_action(subject_2_fixed_action_state.mode))
     {
         subject_2_encoder_yaw_task(now_ms);
+        return;
+    }
+    if(subject_2_fixed_is_gyro_snake_action(subject_2_fixed_action_state.mode))
+    {
+        subject_2_gyro_snake_task(now_ms);
         return;
     }
     if(subject_2_fixed_is_turn_action(subject_2_fixed_action_state.mode)

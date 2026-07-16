@@ -197,6 +197,12 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_ROUTE11_MIN_PREVIEW_STEPS 20
 #define PORTION2_ROUTE11_CURVE_PREVIEW_STEPS 32
 #define PORTION2_ROUTE11_SPEED         10.0f
+#define PORTION2_ROUTE11_TERMINAL_BLEND_START_M 2.5f
+#define PORTION2_ROUTE11_TERMINAL_BLEND_FULL_M 0.8f
+#define PORTION2_ROUTE11_FINAL_YAW_GAIN 1.0f
+#define PORTION2_ROUTE11_FINAL_YAW_STEER_LIMIT 15.0f
+#define PORTION2_ROUTE11_FINAL_CRAWL_DIST 2.0f
+#define PORTION2_ROUTE11_FINAL_CRAWL_SPEED 6.0f
 #define PORTION2_SNAKE_STEERING_CMD_LIMIT 20.0f
 #define PORTION2_SNAKE_SHARP_STEERING_CMD_LIMIT 30.0f
 #define PORTION2_SHARP_TURN_TRIGGER_DEG 4.0f
@@ -255,6 +261,13 @@ static uint32 portion2_gps_reject_last_log_ms = 0;
 #define PORTION2_GUIDED_YAW_SLOW_DIST_M 3.0f
 #define PORTION2_GUIDED_YAW_SLOW_TRIGGER_DEG 20.0f
 #define PORTION2_GUIDED_YAW_SLOW_SPEED 8.0f
+#define PORTION2_SNAKE_TERMINAL_BLEND_START_M 2.5f
+#define PORTION2_SNAKE_TERMINAL_BLEND_FULL_M 0.8f
+#define PORTION2_SNAKE_FINAL_YAW_GAIN 1.1f
+#define PORTION2_SNAKE_FINAL_YAW_STEER_LIMIT 15.0f
+#define PORTION2_SNAKE_FINAL_YAW_ALIGN_MAX_DIST 0.80f
+#define PORTION2_SNAKE_FINAL_CRAWL_DIST 2.0f
+#define PORTION2_SNAKE_FINAL_CRAWL_SPEED 6.0f
 #define PORTION2_FINAL_CLOSEST_ARM_DIST 0.80f
 #define PORTION2_FINAL_CLOSEST_RISE_DIST 0.05f
 #define PORTION2_FINAL_CLOSEST_CONFIRM_CYCLES 1U
@@ -795,29 +808,86 @@ static float guandao_normalize_angle(float angle)
     return angle;
 }
 
+static uint8 portion2_route11_reverse_active(void)
+{
+    return (portion2_selected_route == PORTION2_ROUTE_STRAIGHT
+            && portion2_run_drive_reverse) ? 1U : 0U;
+}
+
+static uint8 portion2_route_uses_terminal_yaw_blend(void)
+{
+    return (portion2_route11_reverse_active()
+            || portion2_selected_route < PORTION2_GUIDED_ROUTE_COUNT
+            || portion2_selected_route == PORTION2_ROUTE_SNAKE) ? 1U : 0U;
+}
+
+static float portion2_terminal_yaw_blend_start(void)
+{
+    if(portion2_route11_reverse_active())
+    {
+        return PORTION2_ROUTE11_TERMINAL_BLEND_START_M;
+    }
+    return (portion2_selected_route == PORTION2_ROUTE_SNAKE)
+            ? PORTION2_SNAKE_TERMINAL_BLEND_START_M
+            : PORTION2_GUIDED_TERMINAL_BLEND_START_M;
+}
+
+static float portion2_terminal_yaw_blend_full(void)
+{
+    if(portion2_route11_reverse_active())
+    {
+        return PORTION2_ROUTE11_TERMINAL_BLEND_FULL_M;
+    }
+    return (portion2_selected_route == PORTION2_ROUTE_SNAKE)
+            ? PORTION2_SNAKE_TERMINAL_BLEND_FULL_M
+            : PORTION2_GUIDED_TERMINAL_BLEND_FULL_M;
+}
+
+static float portion2_terminal_yaw_gain(void)
+{
+    if(portion2_route11_reverse_active())
+    {
+        return PORTION2_ROUTE11_FINAL_YAW_GAIN;
+    }
+    return (portion2_selected_route == PORTION2_ROUTE_SNAKE)
+            ? PORTION2_SNAKE_FINAL_YAW_GAIN
+            : PORTION2_GUIDED_FINAL_YAW_GAIN;
+}
+
+static float portion2_terminal_yaw_steer_limit(void)
+{
+    if(portion2_route11_reverse_active())
+    {
+        return PORTION2_ROUTE11_FINAL_YAW_STEER_LIMIT;
+    }
+    return (portion2_selected_route == PORTION2_ROUTE_SNAKE)
+            ? PORTION2_SNAKE_FINAL_YAW_STEER_LIMIT
+            : PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT;
+}
+
 static float portion2_guided_terminal_steering(float path_steering, float dist_to_final,
         float final_yaw, float current_yaw)
 {
     float blend;
     float yaw_error;
     float yaw_steering;
+    float blend_start = portion2_terminal_yaw_blend_start();
+    float blend_full = portion2_terminal_yaw_blend_full();
+    float steer_limit = portion2_terminal_yaw_steer_limit();
 
-    if(portion2_selected_route >= PORTION2_GUIDED_ROUTE_COUNT
-            || dist_to_final >= PORTION2_GUIDED_TERMINAL_BLEND_START_M)
+    if(!portion2_route_uses_terminal_yaw_blend()
+            || dist_to_final >= blend_start)
     {
         return path_steering;
     }
 
-    blend = (PORTION2_GUIDED_TERMINAL_BLEND_START_M - dist_to_final)
-            / (PORTION2_GUIDED_TERMINAL_BLEND_START_M - PORTION2_GUIDED_TERMINAL_BLEND_FULL_M);
+    blend = (blend_start - dist_to_final) / (blend_start - blend_full);
     if(blend < 0.0f) blend = 0.0f;
     if(blend > 1.0f) blend = 1.0f;
 
     yaw_error = guandao_normalize_angle(final_yaw - current_yaw);
-    yaw_steering = yaw_error * PORTION2_GUIDED_FINAL_YAW_GAIN;
-    Value_Limit_float(&yaw_steering,
-            -PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT,
-            PORTION2_GUIDED_FINAL_YAW_STEER_LIMIT);
+    yaw_steering = yaw_error * portion2_terminal_yaw_gain();
+    Value_Limit_float(&yaw_steering, -steer_limit, steer_limit);
     return path_steering * (1.0f - blend) + yaw_steering * blend;
 }
 
@@ -948,7 +1018,7 @@ static uint8 portion2_final_yaw_align(state_t final_point, float dist_to_final, 
     uint32 now_ms;
     float yaw_error = guandao_normalize_angle(final_point.theta - Yaw_1);
     float max_align_dist = (portion2_selected_route == PORTION2_ROUTE_SNAKE)
-            ? PORTION2_SNAKE_FINAL_STOP_DIST : PORTION2_FINAL_YAW_ALIGN_MAX_DIST;
+            ? PORTION2_SNAKE_FINAL_YAW_ALIGN_MAX_DIST : PORTION2_FINAL_YAW_ALIGN_MAX_DIST;
 
     guandao_debug_angle_diff = yaw_error;
     if(fabsf(yaw_error) <= PORTION2_FINAL_YAW_TOLERANCE_DEG)
@@ -1713,7 +1783,26 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
         if(guandao_debug_stop_reason == 0) guandao_debug_stop_reason = 2;
         state->current_point_index++;
         if(state->current_point_index >= route_length )
-        {   state->current_point_index = route_length;
+        {
+            if(state == &portion_2)
+            {
+                state_t final_point_for_align = guandao_route_point(state, route_length - 1);
+                float final_align_dist;
+                uint8 align_result;
+
+                final_point_for_align.theta = portion2_run_final_yaw;
+                final_align_dist = get_distance(state->current_state, final_point_for_align);
+                state->current_point_index = route_length - 1;
+                align_result = portion2_final_yaw_align(final_point_for_align,
+                        final_align_dist, out_v_l, out_v_r, out_servo);
+                if(align_result == PORTION2_FINAL_YAW_ALIGN_RUNNING)
+                {
+                    last_target_steering = 0.0f;
+                    last_steer_limit_ms = 0;
+                    return;
+                }
+            }
+            state->current_point_index = route_length;
             guandao_debug_stop_reason = 4;
             * out_v_l = 0;
             * out_v_r = 0;
@@ -1916,6 +2005,18 @@ void pursuit_contral_mode(guandao_state * state,float * out_v_l,float * out_v_r,
            && v_center > PORTION2_FINAL_CRAWL_SPEED)
    {
        v_center = PORTION2_FINAL_CRAWL_SPEED;
+   }
+   if(state == &portion_2 && portion2_route11_reverse_active()
+           && dist_to_final <= PORTION2_ROUTE11_FINAL_CRAWL_DIST
+           && v_center > PORTION2_ROUTE11_FINAL_CRAWL_SPEED)
+   {
+       v_center = PORTION2_ROUTE11_FINAL_CRAWL_SPEED;
+   }
+   if(state == &portion_2 && portion2_selected_route == PORTION2_ROUTE_SNAKE
+           && dist_to_final <= PORTION2_SNAKE_FINAL_CRAWL_DIST
+           && v_center > PORTION2_SNAKE_FINAL_CRAWL_SPEED)
+   {
+       v_center = PORTION2_SNAKE_FINAL_CRAWL_SPEED;
    }
 
    if(portion1_parking_zone && v_center < PORTION1_PARK_MIN_SPEED) v_center = PORTION1_PARK_MIN_SPEED;
@@ -3421,6 +3522,10 @@ void portion2_run_task(void)
             recorded_terminal_yaw = portion2_run_reverse
                     ? portion2_route_start_yaw[portion2_selected_route]
                     : portion2_route_final_yaw[portion2_selected_route];
+            if(portion2_route11_reverse_active())
+            {
+                recorded_terminal_yaw = guandao_normalize_angle(recorded_terminal_yaw + 180.0f);
+            }
             portion2_run_final_yaw = guandao_normalize_angle(recorded_terminal_yaw + yaw_delta);
             guandao_build_smooth_plan(&portion_2);
             for(uint8 i = 0; i < portion_2.gps_recode_length; i++)
