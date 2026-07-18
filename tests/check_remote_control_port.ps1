@@ -115,8 +115,6 @@ foreach($pattern in @(
     '#define\s+REMOTE_CONTROL_SPEED_FULL_SCALE\s+\(776\.0f\)',
     '#define\s+REMOTE_CONTROL_MAX_TARGET_SPEED_MPS\s+\(2\.0f\)',
     '#define\s+REMOTE_CONTROL_SPEED_OVERSPEED_MARGIN_MPS\s+\(0\.02f\)',
-    '#define\s+REMOTE_CONTROL_MODE_LOW_THRESHOLD\s+\(600U\)',
-    '#define\s+REMOTE_CONTROL_MODE_HIGH_THRESHOLD\s+\(1400U\)',
     '#define\s+REMOTE_CONTROL_BUTTON_THRESHOLD\s+\(1400U\)',
     'uart_receiver_init\s*\(\s*\)',
     'uart_receiver\.finsh_flag',
@@ -127,10 +125,6 @@ foreach($pattern in @(
     'void\s+remote_control_stop\s*\(\s*void\s*\)\s*\{[\s\S]*?if\s*\(\s*remote_control_active\s*\)',
     'remote_control_apply_failsafe\s*\(\s*"DISABLED"\s*\)',
     'remote_control_apply_failsafe\s*\(\s*"MODE"\s*\)',
-    'static\s+void\s+remote_control_update_mode_from_ch4\s*\(\s*void\s*\)',
-    'uart_receiver\.channel\[3\]\s*<\s*REMOTE_CONTROL_MODE_LOW_THRESHOLD[\s\S]*?next_mode\s*=\s*Guandao_Drive',
-    'uart_receiver\.channel\[3\]\s*<\s*REMOTE_CONTROL_MODE_HIGH_THRESHOLD[\s\S]*?next_mode\s*=\s*Guandao_Portion2_Recode',
-    'next_mode\s*=\s*Guandao_Voice',
     'main_mode\s*==\s*Guandao_Portion2_Recode',
     'static\s+float\s+remote_control_map_speed_from_ch2\s*\(\s*uint16\s+channel_value\s*\)',
     'static\s+float\s+remote_control_limit_speed_command\s*\(\s*float\s+target_mps\s*\)',
@@ -150,9 +144,6 @@ foreach($pattern in @(
     'uart_receiver\.channel\[2\]\s*>=\s*REMOTE_CONTROL_BUTTON_THRESHOLD[\s\S]*?portion2_record_remote_start_stop_request\s*\(\s*\)',
     'uart_receiver\.channel\[4\]\s*>=\s*REMOTE_CONTROL_BUTTON_THRESHOLD[\s\S]*?portion2_record_remote_clear_request\s*\(\s*\)',
     'uart_receiver\.channel\[5\]\s*>=\s*REMOTE_CONTROL_BUTTON_THRESHOLD[\s\S]*?portion2_record_remote_save_request\s*\(\s*\)',
-    'route_setting_choice\s*=\s*3[\s\S]*?conrtol_mode\s*=\s*GUANDAO',
-    'route_setting_choice\s*=\s*1[\s\S]*?conrtol_mode\s*=\s*IDLE',
-    'route_setting_choice\s*=\s*1[\s\S]*?conrtol_mode\s*=\s*GUANDAO',
     'if\s*\(\s*main_mode\s*!=\s*Guandao_Portion2_Recode\s*\)[\s\S]*?remote_control_apply_failsafe\s*\(\s*"MODE"\s*\)',
     'rear_motor_stop\s*\(\s*\)',
     'remote_command_speed_mps\s*=\s*remote_control_ramp_speed_command\s*\(\s*remote_control_limit_speed_command\s*\(\s*remote_target_speed_mps\s*\)\s*\)',
@@ -214,10 +205,6 @@ if($main -match 'case\s+Guandao_Drive\s*:[\s\S]*?remote_control_stop\s*\(\s*\)')
 if($main -match '#include\s+"rear_motor/rear_motor\.h"li') {
     throw 'Stray li after rear_motor include must be removed.'
 }
-if($remoteSource -match 'update_mode_from_ch3|channel\[2\]\s*<\s*REMOTE_CONTROL_MODE_') {
-    throw 'Mode switching must use CH4, not CH3.'
-}
-
 foreach($pattern in @(
     'void\s+portion2_record_remote_start_stop_request\s*\(\s*void\s*\)\s*;',
     'void\s+portion2_record_remote_clear_request\s*\(\s*void\s*\)\s*;',

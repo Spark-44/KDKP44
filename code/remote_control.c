@@ -15,8 +15,6 @@
 #define REMOTE_CONTROL_SPEED_RAMP_STEP_MPS     (0.03f)
 #define REMOTE_CONTROL_ANGLE_DIRECTION         (-1.0f)
 #define REMOTE_CONTROL_SPEED_DIRECTION         (-1.0f)
-#define REMOTE_CONTROL_MODE_LOW_THRESHOLD      (600U)
-#define REMOTE_CONTROL_MODE_HIGH_THRESHOLD     (1400U)
 #define REMOTE_CONTROL_BUTTON_THRESHOLD        (1400U)
 
 #pragma section all "cpu0_dsram"
@@ -137,52 +135,6 @@ static void remote_control_update_target(void)
     remote_target_angle_deg = remote_control_limit_float(remote_target_angle_deg, -REMOTE_CONTROL_MAX_TARGET_ANGLE_DEG, REMOTE_CONTROL_MAX_TARGET_ANGLE_DEG);
 }
 
-static void remote_control_update_mode_from_ch4(void)
-{
-    Mode_Choice next_mode;
-
-    if(uart_receiver.channel[3] < REMOTE_CONTROL_MODE_LOW_THRESHOLD)
-    {
-        next_mode = Guandao_Drive;
-    }
-    else if(uart_receiver.channel[3] < REMOTE_CONTROL_MODE_HIGH_THRESHOLD)
-    {
-        next_mode = Guandao_Portion2_Recode;
-    }
-    else
-    {
-        next_mode = Guandao_Voice;
-    }
-
-    if(main_mode != next_mode)
-    {
-        if(remote_control_active && next_mode != Guandao_Portion2_Recode)
-        {
-            remote_control_apply_failsafe("MODE");
-        }
-        main_mode = next_mode;
-
-        if(next_mode == Guandao_Voice)
-        {
-            route_setting_choice = 3;
-            conrtol_mode = GUANDAO;
-            ips200_clear();
-        }
-        else if(next_mode == Guandao_Portion2_Recode)
-        {
-            route_setting_choice = 1;
-            conrtol_mode = IDLE;
-            ips200_clear();
-        }
-        else
-        {
-            route_setting_choice = 1;
-            conrtol_mode = GUANDAO;
-            ips200_clear();
-        }
-    }
-}
-
 static void remote_control_update_record_buttons(void)
 {
     uint8 ch3_active = (uart_receiver.channel[2] >= REMOTE_CONTROL_BUTTON_THRESHOLD);
@@ -278,7 +230,6 @@ uint8 remote_control_task(void)
 
         if(uart_receiver.state)
         {
-            remote_control_update_mode_from_ch4();
             remote_control_update_record_buttons();
             if(main_mode == Guandao_Portion2_Recode)
             {
