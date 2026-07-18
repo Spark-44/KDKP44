@@ -1,5 +1,8 @@
 #include "remote_control.h"
+#include "portion2_uart1_mux.h"
 #include "rear_motor/rear_motor.h"
+#include "zf_device_dot_matrix_screen.h"
+#include "zf_device_tld7002.h"
 
 #define REMOTE_CONTROL_FRAME_TIMEOUT_MS        (300U)
 #define REMOTE_CONTROL_CHANNEL_DEAD_ZONE       (50)
@@ -29,6 +32,7 @@ static uint32 remote_last_10ms = 0;
 static uint8  remote_ch3_button_last = 0;
 static uint8  remote_ch5_button_last = 0;
 static uint8  remote_ch6_button_last = 0;
+static volatile portion2_uart1_owner_t portion2_uart1_owner = PORTION2_UART1_OWNER_NONE;
 #pragma section all restore
 
 static void remote_control_apply_failsafe(const char *reason);
@@ -326,4 +330,64 @@ void remote_control_stop(void)
 uint8 remote_control_is_active(void)
 {
     return remote_control_active;
+}
+
+portion2_uart1_owner_t portion2_uart1_get_owner(void)
+{
+    return portion2_uart1_owner;
+}
+
+void portion2_uart1_select_record_receiver(void)
+{
+    if(portion2_uart1_owner == PORTION2_UART1_OWNER_RECORD_RECEIVER)
+    {
+        return;
+    }
+
+    portion2_uart1_owner = PORTION2_UART1_OWNER_RECORD_RECEIVER;
+    remote_control_init();
+}
+
+void portion2_uart1_select_run_dot_matrix(void)
+{
+    if(portion2_uart1_owner == PORTION2_UART1_OWNER_RUN_DOT_MATRIX)
+    {
+        return;
+    }
+
+    remote_control_stop();
+    portion2_uart1_owner = PORTION2_UART1_OWNER_RUN_DOT_MATRIX;
+    dot_matrix_screen_init();
+}
+
+void portion2_uart1_update_for_mode(Mode_Choice mode)
+{
+    if(mode == Guandao_Portion2_Recode)
+    {
+        portion2_uart1_select_record_receiver();
+    }
+    else
+    {
+        portion2_uart1_select_run_dot_matrix();
+    }
+}
+
+void portion2_uart1_rx_isr_handler(void)
+{
+    if(portion2_uart1_owner == PORTION2_UART1_OWNER_RECORD_RECEIVER)
+    {
+        uart_receiver_handler();
+    }
+    else if(portion2_uart1_owner == PORTION2_UART1_OWNER_RUN_DOT_MATRIX)
+    {
+        tld7002_callback();
+    }
+}
+
+void portion2_uart1_error_isr_handler(void)
+{
+    if(portion2_uart1_owner == PORTION2_UART1_OWNER_RECORD_RECEIVER)
+    {
+        uart_receiver_note_uart_error();
+    }
 }

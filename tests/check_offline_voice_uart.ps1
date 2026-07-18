@@ -71,29 +71,29 @@ if($source -match 'VOICE-UART1|UART1_TX_P11_12|UART1_RX_P11_10') {
     throw 'Offline voice code still contains old UART1/P11.12/P11.10 identifiers.'
 }
 
-if($uart2RxIsr -match 'offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART2 RX interrupt must not feed offline voice while UART2 is assigned to the remote receiver.'
+if($uart2RxIsr -notmatch 'offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART2 RX interrupt must feed offline voice.'
 }
 if($uart1RxIsr -match 'offline_voice_uart_rx_handler\s*\(\s*\)') {
     throw 'UART1 RX interrupt must no longer feed offline voice.'
 }
-if($uart2RxIsr -notmatch 'uart_receiver_handler\s*\(\s*\)') {
-    throw 'UART2 RX interrupt must be consumed by the remote receiver while voice is disabled.'
+if($uart2RxIsr -match 'uart_receiver_handler\s*\(\s*\)') {
+    throw 'UART2 RX interrupt must not be consumed by the remote receiver.'
 }
-if($main -notmatch '(?m)^\s*dot_matrix_screen_init\s*\(\s*\)\s*;') {
-    throw 'Dot-matrix/TLD7002 init must remain enabled on UART1.'
+if($main -notmatch 'portion2_uart1_update_for_mode\s*\(\s*main_mode\s*\)') {
+    throw 'UART1 receiver/dot-matrix ownership must follow the operating mode.'
 }
 if($main -notmatch '(?m)^\s*Portion2_Dot_Matrix_Scan_Update\s*\(\s*\)\s*;') {
     throw 'Voice mode must keep scanning dot-matrix/TLD7002 on UART1.'
 }
-if($main -match '(?m)^\s*offline_voice_init\s*\(') {
-    throw 'Offline voice low-level driver may remain configured, but main must not initialize it while UART2 is assigned to the remote receiver.'
+if($main -notmatch '(?m)^\s*offline_voice_init\s*\(') {
+    throw 'Offline voice must initialize on UART2.'
 }
-if($main -match '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
-    throw 'Offline voice must not be polled while UART2 is assigned to the remote receiver.'
+if($main -notmatch '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
+    throw 'Offline voice must be polled.'
 }
-if($main -notmatch '(?m)^\s*remote_control_init\s*\(\s*\)\s*;' -or $main -notmatch '(?m)^\s*remote_control_task\s*\(\s*\)\s*;') {
-    throw 'Remote receiver must initialize and run when UART2 is assigned to the remote receiver.'
+if($main -notmatch '(?m)^\s*remote_control_task\s*\(\s*\)\s*;') {
+    throw 'Remote receiver task must continue running in record mode.'
 }
 
-Write-Output 'Offline voice low-level UART2 config preserved while remote receiver owns UART2.'
+Write-Output 'Offline voice enabled on UART2 while UART1 is mode-multiplexed.'

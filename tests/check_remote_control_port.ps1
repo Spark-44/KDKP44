@@ -42,18 +42,20 @@ $isr = Get-Content -Raw $isrPath
 $main = Get-Content -Raw $mainPath
 $guandaoHeader = Get-Content -Raw $guandaoHeaderPath
 $guandaoSource = Get-Content -Raw $guandaoSourcePath
+$uart1RxIsr = [regex]::Match($isr, 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?\n\}').Value
+$uart2RxIsr = [regex]::Match($isr, 'IFX_INTERRUPT\s*\(\s*uart2_rx_isr[\s\S]*?\n\}').Value
 
 foreach($pattern in @(
-    '#define\s+UART_RECEVIER_UART_INDEX\s+\(UART_2\)',
-    '#define\s+UART_RECEVIER_TX_PIN\s+\(UART2_TX_P10_5\)',
-    '#define\s+UART_RECEVIER_RX_PIN\s+\(UART2_RX_P10_6\)',
+    '#define\s+UART_RECEVIER_UART_INDEX\s+\(UART_1\)',
+    '#define\s+UART_RECEVIER_TX_PIN\s+\(UART1_TX_P02_2\)',
+    '#define\s+UART_RECEVIER_RX_PIN\s+\(UART1_RX_P02_3\)',
     '#define\s+SBUS_UART_BAUDRATE\s+\(100000\)',
     '#define\s+UART_RECEVIER_CHANNEL_NUM\s+\(\s*6\s*\)',
     'extern\s+uart_receiver_struct\s+uart_receiver\s*;',
     'void\s+uart_receiver_init\s*\(\s*void\s*\)\s*;'
 )) {
     if($receiverHeader -notmatch $pattern) {
-        throw "Receiver header missing expected SBUS/UART2 setting: $pattern"
+        throw "Receiver header missing expected SBUS/UART1 setting: $pattern"
     }
 }
 
@@ -172,8 +174,8 @@ if($remoteSource -match 'actual_mps\s*<=\s*-\(REMOTE_CONTROL_MAX_TARGET_SPEED_MP
     throw 'Negative overspeed must clamp to -2m/s, not zero.'
 }
 
-if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart2_rx_isr[\s\S]*?uart_receiver_handler\s*\(\s*\)') {
-    throw 'UART2 RX ISR must dispatch SBUS receiver handler.'
+if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?portion2_uart1_rx_isr_handler\s*\(\s*\)') {
+    throw 'UART1 RX ISR must dispatch the current UART1 owner.'
 }
 if($isr -match 'IFX_INTERRUPT\s*\(\s*uart3_rx_isr[\s\S]*?uart_receiver_handler\s*\(\s*\)') {
     throw 'UART3 RX ISR must stay free for GNSS and must not dispatch SBUS receiver handler.'
@@ -181,15 +183,15 @@ if($isr -match 'IFX_INTERRUPT\s*\(\s*uart3_rx_isr[\s\S]*?uart_receiver_handler\s
 if($isr -notmatch 'IFX_INTERRUPT\s*\(\s*uart3_rx_isr[\s\S]*?gnss_uart_callback\s*\(\s*\)') {
     throw 'UART3 RX ISR must keep GNSS callback.'
 }
-if($isr -match 'IFX_INTERRUPT\s*\(\s*uart1_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART1 RX ISR must not dispatch offline voice while voice is disabled.'
+if($uart1RxIsr -match 'offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART1 RX ISR must not dispatch offline voice.'
 }
-if($isr -match 'IFX_INTERRUPT\s*\(\s*uart2_rx_isr[\s\S]*?offline_voice_uart_rx_handler\s*\(\s*\)') {
-    throw 'UART2 RX ISR must not dispatch offline voice while the remote receiver owns UART2.'
+if($uart2RxIsr -notmatch 'offline_voice_uart_rx_handler\s*\(\s*\)') {
+    throw 'UART2 RX ISR must dispatch offline voice.'
 }
 
 foreach($pattern in @(
-    'remote_control_init\s*\(\s*\)',
+    'portion2_uart1_update_for_mode\s*\(\s*main_mode\s*\)',
     'while\s*\(\s*TRUE\s*\)[\s\S]*?remote_control_task\s*\(\s*\)\s*;',
     'case\s+Guandao_Portion2_Recode\s*:[\s\S]*?portion2_record_task\s*\(\s*\)[\s\S]*?if\s*\(\s*remote_control_is_active\s*\(\s*\)\s*\)[\s\S]*?continue\s*;',
     'case\s+Guandao_Drive\s*:[\s\S]*?Portion2_Drive_Mode_Task\s*\(\s*\)'
@@ -199,8 +201,8 @@ foreach($pattern in @(
     }
 }
 
-if($main -match '(?m)^\s*offline_voice_init\s*\(' -or $main -match '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
-    throw 'Offline voice must not initialize or poll while the remote receiver owns UART2.'
+if($main -notmatch '(?m)^\s*offline_voice_init\s*\(' -or $main -notmatch '(?m)^\s*offline_voice_poll\s*\(\s*\)\s*;') {
+    throw 'Offline voice must initialize and poll on UART2.'
 }
 
 if($main -match 'case\s+Guandao_Voice\s*:[\s\S]*?remote_control_stop\s*\(\s*\)') {

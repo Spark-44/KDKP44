@@ -7,9 +7,9 @@
 
 #include "zf_common_typedef.h"
 
-#define UART_RECEVIER_UART_INDEX            (UART_2)            // SBUS receiver UART
-#define UART_RECEVIER_TX_PIN                (UART2_TX_P10_5)    // Placeholder TX pin for UART init
-#define UART_RECEVIER_RX_PIN                (UART2_RX_P10_6)    // Receiver TX connects to MCU RX
+#define UART_RECEVIER_UART_INDEX            (UART_1)            // UART1 is shared with the dot matrix by operating mode
+#define UART_RECEVIER_TX_PIN                (UART1_TX_P02_2)    // MCU TX, normally unused by the SBUS receiver
+#define UART_RECEVIER_RX_PIN                (UART1_RX_P02_3)    // Receiver TX connects to MCU RX
 #define SBUS_UART_BAUDRATE                  (100000)            // SBUS fixed baudrate
 #define UART_RECEVIER_CHANNEL_NUM           ( 6 )               // Remote channel count
 

@@ -2,6 +2,7 @@
 #include "IfxScu_reg.h"
 #include "screen.h"
 #include "offline_voice.h"
+#include "portion2_uart1_mux.h"
 #include "buzzer_action.h"
 #include "rear_motor/rear_motor.h"
 #include "guandao.h"
@@ -984,10 +985,9 @@ int core0_main(void)
 
     Init_All();                         
     rear_motor_init();                  
-    dot_matrix_screen_init();
     servo_init();
     gpio_init(PORTION2_ALL_LIGHT_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
-    remote_control_init();
+    offline_voice_init(Portion2_Voice_Command_Handle, 0);
     
    pit_ms_init(CCU61_CH0, 1);
    pit_ms_init(CCU61_CH1, 1);
@@ -1001,6 +1001,7 @@ int core0_main(void)
     main_mode = Guandao_Portion2_Recode;
     route_setting_choice = 1;
     conrtol_mode = IDLE;
+    portion2_uart1_update_for_mode(main_mode);
 
     Flash_Write_pid();                                                               
 
@@ -1008,6 +1009,8 @@ int core0_main(void)
 //    while(Steer_Mid_Cheak());
     while (TRUE)
     {
+        portion2_uart1_update_for_mode(main_mode);
+        offline_voice_poll();
         remote_control_task();
         Portion2_Serial_Command_Update();
         switch(main_mode)                                                    
