@@ -49,13 +49,13 @@ Assert-Contains $flash 'portion2_route_storage_get\s*\(' 'flash writes must read
 Assert-Contains $flash 'portion2_route_storage_set\s*\(' 'flash reads must write inertial points through segmented storage'
 Assert-Contains $flash 'portion2_gps_storage_get\s*\(' 'flash writes must read GPS points through segmented storage'
 Assert-Contains $flash 'portion2_gps_storage_set\s*\(' 'flash reads must write GPS points through segmented storage'
-Assert-Contains $main '#define\s+PORTION2_ALL_LIGHT_PIN\s+P22_0' 'all-light output must use P22_0'
-Assert-Contains $main 'gpio_init\(PORTION2_ALL_LIGHT_PIN,\s*GPO,\s*GPIO_LOW,\s*GPO_PUSH_PULL\)' 'P22_0 must start low as a push-pull output'
+Assert-Contains $main '#define\s+PORTION2_ALL_LIGHT_PIN\s+P02_1' 'all-light output must use P02_1'
+Assert-Contains $main 'gpio_init\(PORTION2_ALL_LIGHT_PIN,\s*GPO,\s*GPIO_LOW,\s*GPO_PUSH_PULL\)' 'P02_1 must start low as a push-pull output'
 Assert-Contains $main 'OFFLINE_VOICE_CMD_INTERIOR_LIGHT[\s\S]*?Portion2_Aux_Start\(7\)' 'voice command 0x0A must start the all-light action'
-Assert-Contains $main 'if\(mode\s*==\s*7\)[\s\S]*?gpio_high\(PORTION2_ALL_LIGHT_PIN\)' 'all-light action must drive P22_0 high'
-Assert-Contains $main 'Portion2_Aux_Stop\(void\)[\s\S]*?gpio_low\(PORTION2_ALL_LIGHT_PIN\)' 'stopping an auxiliary action must drive P22_0 low'
+Assert-Contains $main 'if\(mode\s*==\s*7\)[\s\S]*?gpio_high\(PORTION2_ALL_LIGHT_PIN\)' 'all-light action must drive P02_1 high'
+Assert-Contains $main 'Portion2_Aux_Stop\(void\)[\s\S]*?gpio_low\(PORTION2_ALL_LIGHT_PIN\)' 'stopping an auxiliary action must drive P02_1 low'
 Assert-Contains $main 'system_getval_ms\(\)\s*-\s*portion2_aux_start_ms\)\s*>=\s*10000' 'all-light action must share the 10-second timeout'
-Assert-Contains $main 'portion2_mode_k4_short_event\(\)[\s\S]*?Portion2_Aux_Stop\(\)[\s\S]*?main_mode\s*=\s*Guandao_Portion2_Recode' 'leaving run mode must turn P22_0 off'
+Assert-Contains $main 'portion2_mode_k4_short_event\(\)[\s\S]*?Portion2_Aux_Stop\(\)[\s\S]*?main_mode\s*=\s*Guandao_Portion2_Recode' 'leaving run mode must turn P02_1 off'
 Assert-Contains $main "data\s*>=\s*'A'\s*&&\s*data\s*<=\s*'G'[\s\S]*?Portion2_Aux_Start\(data\s*-\s*'A'\s*\+\s*1\)" 'serial G must start the all-light action'
 Assert-Contains $main "data\s*>=\s*'a'\s*&&\s*data\s*<=\s*'g'[\s\S]*?Portion2_Aux_Start\(data\s*-\s*'a'\s*\+\s*1\)" 'serial g must start the all-light action'
 Assert-Contains $main "data\s*>=\s*'U'\s*&&\s*data\s*<=\s*'V'[\s\S]*?portion2_run_select_route\(data\s*-\s*'U'\s*\+\s*PORTION2_ROUTE_RETURN_5\)" 'serial U-V must run routes 10-11 forward'
@@ -72,8 +72,10 @@ $voiceMappings = @(
     'OFFLINE_VOICE_CMD_GATE3_LEFT_BACK[\s\S]*?portion2_run_select_route\(PORTION2_ROUTE_RETURN_5\)',
     'OFFLINE_VOICE_CMD_FORWARD_10M[\s\S]*?portion2_run_select_route\(PORTION2_ROUTE_STRAIGHT\)',
     'OFFLINE_VOICE_CMD_BACKWARD_10M[\s\S]*?portion2_run_select_back_route\(PORTION2_ROUTE_STRAIGHT\)',
-    'OFFLINE_VOICE_CMD_SNAKE_FORWARD[\s\S]*?portion2_run_select_route\(PORTION2_ROUTE_SNAKE\)',
-    'OFFLINE_VOICE_CMD_SNAKE_BACKWARD[\s\S]*?portion2_run_select_back_route\(PORTION2_ROUTE_SNAKE\)'
+    'OFFLINE_VOICE_CMD_SNAKE_FORWARD[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M\)',
+    'OFFLINE_VOICE_CMD_SNAKE_BACKWARD[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M\)',
+    'OFFLINE_VOICE_CMD_ROUTE_SNAKE[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M\)',
+    'OFFLINE_VOICE_CMD_BACK_SNAKE[\s\S]*?Portion2_Fixed_Action_Start\(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M\)'
 )
 
 foreach ($mapping in $voiceMappings) {

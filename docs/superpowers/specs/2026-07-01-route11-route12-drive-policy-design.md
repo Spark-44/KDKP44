@@ -17,8 +17,9 @@ Route 11 records and follows points in their original order while the vehicle dr
 - `W` or `w`: follow route 12 in same-order forward-drive mode.
 - `Q` or `q`: encoder-and-yaw forward 10 m action.
 - `R` or `r`: encoder-and-yaw reverse 10 m action.
-- Voice snake backward 10 m: route 11.
-- Voice snake forward 10 m: route 12.
+- Voice snake backward 10 m: gyro snake reverse action.
+- Voice snake forward 10 m: gyro snake forward action.
+- The legacy voice route-snake command `0x2A` also starts the gyro snake forward action.
 - Voice forward 10 m: encoder-and-yaw forward action.
 - Voice backward 10 m: encoder-and-yaw reverse action.
 
