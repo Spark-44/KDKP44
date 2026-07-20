@@ -31,7 +31,14 @@ static uint8 portion2_drive_k4_wait_release = 0;
 
 static void Guandao_Rear_Motor_Update(void)
 {
+    static uint8 had_drive_target = 0;
     float target_mps = 0.0f;
+
+    if(rear_motor_brake_active())
+    {
+        rear_motor_brake_update();
+        return;
+    }
 
     if(conrtol_mode == GUANDAO)
     {
@@ -50,16 +57,27 @@ static void Guandao_Rear_Motor_Update(void)
     }
     else
     {
+        had_drive_target = 0;
         rear_motor_stop();
         return;
     }
 
     if(target_mps == 0.0f)
     {
-        rear_motor_stop();
+        if(had_drive_target)
+        {
+            had_drive_target = 0;
+            rear_motor_brake_start();
+            if(rear_motor_brake_active()) rear_motor_brake_update();
+        }
+        else
+        {
+            rear_motor_stop();
+        }
     }
     else
     {
+        had_drive_target = 1;
         rear_motor_set_target_mps(target_mps);
         rear_motor_pid_update_100ms();
     }
@@ -147,7 +165,7 @@ static void Record_Idle_Encoder_Diag_Update(void)
     }
 
     last_diag_ms = now_ms;
-    rear_motor_encoder_update_10ms();
+    rear_motor_encoder_update_10ms(Yaw_1);
     {
         char line[128];
         int len = sprintf(line,
@@ -280,7 +298,7 @@ static void Portion2_Drive_Encoder_Update_10ms(void)
     }
 
     last_encoder_ms = now_ms;
-    rear_motor_encoder_update_10ms();
+    rear_motor_encoder_update_10ms(Yaw_1);
 }
 
 static void Portion2_Drive_GPS_Serial_Update(void)

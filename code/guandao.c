@@ -1347,47 +1347,28 @@ float get_distance(state_t p1, state_t p2)
 
 void update_state(guandao_state * state , Encoder_t * ecd)
 {
-    float delta_real_center = 0;
-    float delta_real_l = 0;
-    float delta_real_r = 0;
-    Encoder_Get(ecd);
-    switch(slip_state)
+    int32 odometry_pulses = 0;
+    int32 total_pulses = 0;
+    float sample_yaw = 0.0f;
+
+    while(rear_motor_take_odometry_sample(&odometry_pulses, &sample_yaw))
     {
-        case NONE:
-            delta_real_l = (float)ecd->delta_l*ONE_TICK_DISTANCE;
-            delta_real_r = (float)ecd->delta_r*ONE_TICK_DISTANCE;
+        float sample_theta = daoche_flag ? sample_yaw + 180.0f : sample_yaw;
+        float sample_distance = (float)odometry_pulses * ONE_TICK_DISTANCE;
 
-            break;
-
-        case Left_Slip:
-            delta_real_r = (float)ecd->delta_r*ONE_TICK_DISTANCE;
-            delta_real_l = delta_real_r;
-
-            break;
-
-        case Right_Slip:
-            delta_real_l = (float)ecd->delta_l*ONE_TICK_DISTANCE;
-            delta_real_r = delta_real_l;
-
-            break;
-
-        default : break;
+        angle_plan(&sample_theta);
+        if(daoche_flag) sample_distance = -sample_distance;
+        state->current_state.x += sample_distance * sinf(sample_theta / 180.0f * M_PI);
+        state->current_state.y += sample_distance * cosf(sample_theta / 180.0f * M_PI);
+        total_pulses += odometry_pulses;
     }
 
-    if(!daoche_flag)
-    {
-        delta_real_center  = (delta_real_l+delta_real_r)/2.0f;
-        state->current_state.theta =Yaw_1;
-    }
-    else
-    {
-        delta_real_center  = -(delta_real_l+delta_real_r)/2.0f;
-        state->current_state.theta =Yaw_1+180.0f;
-        angle_plan(&state->current_state.theta);
-    }
-
-    state->current_state.x-=delta_real_center*sinf(state->current_state.theta/180.0f*M_PI);
-    state->current_state.y-=delta_real_center*cosf(state->current_state.theta/180.0f*M_PI);
+    if(total_pulses > 32767) total_pulses = 32767;
+    if(total_pulses < -32768) total_pulses = -32768;
+    ecd->delta_l = (int16)total_pulses;
+    ecd->delta_r = (int16)total_pulses;
+    state->current_state.theta = daoche_flag ? Yaw_1 + 180.0f : Yaw_1;
+    angle_plan(&state->current_state.theta);
 
 }
 

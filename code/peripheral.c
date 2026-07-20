@@ -240,10 +240,10 @@ void Encoder_Get(Encoder_t *count)
 
 void Motor_init(void)
 {
-       pwm_init(PWM_L, 17000, 0);                                                 
-       pwm_init(PWM_R, 17000, 0);                                                
-       gpio_init(MOTOR_GPIO_L, GPO, 1, GPO_PUSH_PULL);       
-       gpio_init(MOTOR_GPIO_R, GPO, 1, GPO_PUSH_PULL);       
+       pwm_init(PWM_L1, 17000, 0);
+       pwm_init(PWM_L2, 17000, 0);
+       pwm_init(PWM_R1, 17000, 0);
+       pwm_init(PWM_R2, 17000, 0);
 }
 
 void VeerMoter_Set(int moter )
@@ -259,25 +259,25 @@ void Moter_Set(int moter_l , int moter_r)
     moter_r = LimitMax(moter_r,MOTER_MAX);
     motor_pwm_l = moter_l;
     motor_pwm_r = moter_r;
+    pwm_set_duty(PWM_L1, 0);
+    pwm_set_duty(PWM_L2, 0);
+    pwm_set_duty(PWM_R1, 0);
+    pwm_set_duty(PWM_R2, 0);
     if(moter_l>=0)
     {
-        pwm_set_duty(PWM_L, moter_l);
-        gpio_set_level(MOTOR_GPIO_L, 1);
+        pwm_set_duty(PWM_L1, moter_l);
     }
     else if(moter_l<0)
     {
-        pwm_set_duty(PWM_L, -moter_l);
-        gpio_set_level(MOTOR_GPIO_L ,0);
+        pwm_set_duty(PWM_L2, -moter_l);
     }
     if(moter_r>=0)
     {
-        pwm_set_duty(PWM_R, moter_r);
-        gpio_set_level(MOTOR_GPIO_R ,1);
+        pwm_set_duty(PWM_R1, moter_r);
     }
     else if(moter_r<0)
     {
-        pwm_set_duty(PWM_R,-moter_r );
-        gpio_set_level(MOTOR_GPIO_R ,0);
+        pwm_set_duty(PWM_R2,-moter_r );
     }
 
 }

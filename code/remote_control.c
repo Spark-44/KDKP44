@@ -188,7 +188,7 @@ static void remote_control_periodic_update(void)
         conrtol_mode = IDLE;
         out_servo = remote_target_angle_deg;
         Steer_Moter_Contral(remote_target_angle_deg);
-        rear_motor_encoder_update_10ms();
+        rear_motor_encoder_update_10ms(Yaw_1);
         rear_motor_set_speed_limit_mps(REMOTE_CONTROL_MAX_TARGET_SPEED_MPS);
         remote_command_speed_mps = remote_control_ramp_speed_command(remote_control_limit_speed_command(remote_target_speed_mps));
         rear_motor_set_target_mps(remote_command_speed_mps);

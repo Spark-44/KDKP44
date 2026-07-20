@@ -148,7 +148,7 @@ foreach($pattern in @(
     'rear_motor_stop\s*\(\s*\)',
     'remote_command_speed_mps\s*=\s*remote_control_ramp_speed_command\s*\(\s*remote_control_limit_speed_command\s*\(\s*remote_target_speed_mps\s*\)\s*\)',
     'rear_motor_set_target_mps\s*\(\s*remote_command_speed_mps\s*\)',
-    'rear_motor_encoder_update_10ms\s*\(\s*\)[\s\S]*?rear_motor_set_target_mps\s*\(\s*remote_command_speed_mps\s*\)[\s\S]*?rear_motor_pid_update_100ms\s*\(\s*\)',
+    'rear_motor_encoder_update_10ms\s*\(\s*Yaw_1\s*\)[\s\S]*?rear_motor_set_target_mps\s*\(\s*remote_command_speed_mps\s*\)[\s\S]*?rear_motor_pid_update_100ms\s*\(\s*\)',
     'Steer_Moter_Contral\s*\(\s*remote_target_angle_deg\s*\)'
 )) {
     if($remoteSource -notmatch $pattern) {

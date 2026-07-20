@@ -17,7 +17,7 @@ typedef struct {
 
 float PID_Compute(PID_TypeDef *pid, float target, float current);
 
-void PID_Init(PID_TypeDef *pid, float kp, float ki, float kd, float max_output);
+void PID_Init(PID_TypeDef *pid, float kp, float ki, float kd, float max_output, float integral_max);
 
 void PID_Reset(PID_TypeDef *pid);
 

@@ -2,12 +2,12 @@
 
 #include "zf_common_headfile.h"
 
-void PID_Init(PID_TypeDef *pid, float kp, float ki, float kd, float max_output) {
+void PID_Init(PID_TypeDef *pid, float kp, float ki, float kd, float max_output, float integral_max) {
     pid->Kp = kp;
     pid->Ki = ki;
     pid->Kd = kd;
     pid->MaxOutput = max_output;
-    pid->IntegralMax = 2000;  
+    pid->IntegralMax = integral_max;
 
     PID_Reset(pid);
 }
