@@ -6,10 +6,6 @@
 #include "buzzer_action.h"
 #include "rear_motor/rear_motor.h"
 #include "guandao.h"
-#include "subject_2_gyro_route.h"
-
-
-
 #include "display.h"
 #include "serial_menu.h"
 #include <stdio.h>
@@ -598,7 +594,6 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         voice_drive_action_stop();
-        subject_2_gyro_route_stop("COMMAND");
         portion2_run_stop();
         out_v_l = 0.0f;
         out_v_r = 0.0f;
@@ -644,7 +639,7 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         }
         reverse_route_pending = 0;
     }
-    else if(data >= 'U' && data <= 'V')
+    else if(data == 'U' || data == 'u')
     {
         reverse_route_pending = 0;
         dump_route_pending = 0;
@@ -653,29 +648,27 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         voice_drive_action_stop();
         Portion2_Ascii_Enter_Run_Mode();
-        portion2_run_select_route(data - 'U' + PORTION2_ROUTE_RETURN_5);
+        portion2_run_select_route(PORTION2_ROUTE_RETURN_5);
     }
-    else if(data == 'W')
+    else if(data == 'V' || data == 'v')
     {
         reverse_route_pending = 0;
         dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
-        voice_drive_action_stop();
         Portion2_Ascii_Enter_Run_Mode();
-        portion2_run_select_route(PORTION2_ROUTE_SNAKE);
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M);
     }
-    else if(data >= 'u' && data <= 'w')
+    else if(data == 'W' || data == 'w')
     {
         reverse_route_pending = 0;
         dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
-        voice_drive_action_stop();
         Portion2_Ascii_Enter_Run_Mode();
-        portion2_run_select_route(data - 'u' + PORTION2_ROUTE_RETURN_5);
+        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M);
     }
     else if(data >= 'A' && data <= 'H')
     {
@@ -711,67 +704,23 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
             Portion2_Aux_Start(8);
         }
     }
-    else if(data >= 'I' && data <= 'P')
+    else if(data >= 'M' && data <= 'P')
     {
         reverse_route_pending = 0;
         dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
-        switch(data)
-        {
-            case 'I':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_FORWARD_10M);
-                break;
-            case 'J':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_BACKWARD_10M);
-                break;
-            case 'M':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_CCW_CIRCLE);
-                break;
-            case 'N':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_CW_CIRCLE);
-                break;
-            case 'O':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_TURN_LEFT);
-                break;
-            case 'P':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_TURN_RIGHT);
-                break;
-            default:
-                break;
-        }
+        Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_CCW_CIRCLE + (data - 'M')));
     }
-    else if(data >= 'i' && data <= 'p')
+    else if(data >= 'm' && data <= 'p')
     {
         reverse_route_pending = 0;
         dump_route_pending = 0;
         portion2_run_last_rx = data;
         portion2_run_rx_count++;
         uart_write_byte(DEBUG_UART_INDEX, data);
-        switch(data)
-        {
-            case 'i':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_FORWARD_10M);
-                break;
-            case 'j':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_BACKWARD_10M);
-                break;
-            case 'm':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_CCW_CIRCLE);
-                break;
-            case 'n':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_CW_CIRCLE);
-                break;
-            case 'o':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_TURN_LEFT);
-                break;
-            case 'p':
-                Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_TURN_RIGHT);
-                break;
-            default:
-                break;
-        }
+        Portion2_Fixed_Action_Start((voice_drive_action_mode_t)(VOICE_DRIVE_ACTION_CCW_CIRCLE + (data - 'm')));
     }
     else if(data == 'Q' || data == 'q')
     {
@@ -792,62 +741,6 @@ static void Portion2_Ascii_Command_Execute(uint8 data)
         uart_write_byte(DEBUG_UART_INDEX, data);
         uart_write_string(DEBUG_UART_INDEX, "\r\n");
         Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_ENCODER_YAW_REVERSE_10M);
-    }
-    else if(data == 'X' || data == 'x')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        voice_drive_action_stop();
-        portion2_run_stop();
-        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_13, 1U);
-    }
-    else if(data == 'y')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        voice_drive_action_stop();
-        portion2_run_stop();
-        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_14, 0U);
-    }
-    else if(data == 'Y')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        voice_drive_action_stop();
-        portion2_run_stop();
-        subject_2_gyro_route_start(SUBJECT_2_GYRO_ROUTE_14, 1U);
-    }
-    else if(data == 'Z')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_FORWARD_15M);
-    }
-    else if(data == 'z')
-    {
-        reverse_route_pending = 0;
-        dump_route_pending = 0;
-        portion2_run_last_rx = data;
-        portion2_run_rx_count++;
-        uart_write_byte(DEBUG_UART_INDEX, data);
-        uart_write_string(DEBUG_UART_INDEX, "\r\n");
-        Portion2_Fixed_Action_Start(VOICE_DRIVE_ACTION_GYRO_SNAKE_REVERSE_15M);
     }
     else
     {
@@ -1079,11 +972,7 @@ int core0_main(void)
                 Portion2_Run_Mode_Key_Handle();
                 Portion2_Dot_Matrix_Scan_Update();
                 Portion2_Aux_Task();
-                if(subject_2_gyro_route_is_active())
-                {
-                    subject_2_gyro_route_task();
-                }
-                else if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
+                if(voice_drive_action_get_mode() != VOICE_DRIVE_ACTION_NONE)
                 {
                     voice_drive_action_task();
                 }

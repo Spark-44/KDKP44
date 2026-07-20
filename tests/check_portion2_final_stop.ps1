@@ -15,8 +15,8 @@ function Assert-Match {
 $repo = Split-Path -Parent $PSScriptRoot
 $guandao = Get-Content -Raw -Path (Join-Path $repo 'code/guandao.c')
 
-Assert-Match $guandao '#define\s+PORTION2_GUIDED_FINAL_STOP_DIST\s+0\.45f' `
-    'guided portion2 routes must stop within a realistic 0.45m final radius.'
+Assert-Match $guandao '#define\s+PORTION2_GUIDED_FINAL_STOP_DIST\s+0\.35f' `
+    'guided portion2 routes must stop within a tighter 0.35m final radius.'
 Assert-Match $guandao '#define\s+PORTION2_FINAL_CLOSEST_ARM_DIST\s+0\.80f' `
     'portion2 final stop must arm closest-approach tracking inside 0.80m.'
 Assert-Match $guandao '#define\s+PORTION2_FINAL_CLOSEST_RISE_DIST\s+0\.05f' `
