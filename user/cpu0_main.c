@@ -32,6 +32,7 @@ static uint8 portion2_drive_k4_wait_release = 0;
 
 #define REAR_MOTOR_TELEMETRY_PERIOD_MS (200U)
 #define RECORD_IDLE_ENCODER_DIAG_PERIOD_MS (10U)
+#define RECORD_REAR_TELEMETRY_PERIOD_MS (200U)
 
 static void Guandao_Rear_Motor_Update(void)
 {
@@ -130,6 +131,38 @@ static void Rear_Motor_Serial_Telemetry_Update(void)
         if(len > 0)
         {
             uart_write_string(DEBUG_UART_INDEX, line);
+        }
+    }
+}
+
+static void Record_Rear_Motor_Telemetry_Update(void)
+{
+    static uint32 last_report_ms = 0;
+    uint32 now_ms = system_getval_ms();
+
+    if(main_mode != Guandao_Portion2_Recode)
+    {
+        return;
+    }
+    if(!remote_control_is_active())
+    {
+        return;
+    }
+    if((uint32)(now_ms - last_report_ms) < RECORD_REAR_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
+
+    last_report_ms = now_ms;
+    {
+        char line[80];
+        int len = sprintf(line,
+                          "[REC-REAR] speed=%.3fmps pwm=%d\r\n",
+                          rear_motor_get_speed_mps(),
+                          (int)rear_motor_get_pwm());
+        if(len > 0)
+        {
+            Serial_Debug_Write(line);
         }
     }
 }
@@ -1092,6 +1125,7 @@ int core0_main(void)
                 voice_inited = 0;
                 Record_Idle_Encoder_Diag_Update();
                 portion2_record_task();
+                Record_Rear_Motor_Telemetry_Update();
                 if(remote_control_is_active())
                 {
                     continue;
