@@ -27,3 +27,6 @@ Desktop.ini
 *.map
 *.mdf
 *.src
+
+# Python test cache
+__pycache__/

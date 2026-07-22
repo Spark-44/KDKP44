@@ -54,8 +54,11 @@
 #define OFFLINE_VOICE_CMD_ROUTE_SNAKE          (0x2A)
 #define OFFLINE_VOICE_CMD_BACK_STRAIGHT        (0x2B)
 #define OFFLINE_VOICE_CMD_BACK_SNAKE           (0x2C)
+#define OFFLINE_VOICE_CMD_TURN_LEFT_ALIAS_1    (0x2D)
+#define OFFLINE_VOICE_CMD_TURN_LEFT_ALIAS_2    (0x2E)
+#define OFFLINE_VOICE_CMD_TURN_LEFT_ALIAS_3    (0x2F)
 
-#define OFFLINE_VOICE_CMD_MAX                  (0x2C)
+#define OFFLINE_VOICE_CMD_MAX                  (0x2F)
 
 #define OFFLINE_VOICE_UART_INDEX               (UART_2)
 #define OFFLINE_VOICE_UART_BAUD                (9600)

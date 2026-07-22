@@ -52,10 +52,11 @@ static inline uint8_t rear_odometry_pose_buffer_take(
         rear_odometry_pose_buffer_t *buffer, rear_odometry_pose_sample_t *sample)
 {
     if(buffer->count == 0u) return 0u;
+
     *sample = buffer->samples[buffer->tail];
     buffer->tail = (uint8_t)((buffer->tail + 1u) % REAR_ODOMETRY_POSE_BUFFER_CAPACITY);
     buffer->count--;
     return 1u;
 }
 
-#endif /* CODE_REAR_MOTOR_REAR_ODOMETRY_POSE_BUFFER_H_ */
+#endif

@@ -8,9 +8,8 @@
 #define REAR_GEAR_RATIO              1.6f
 #define REAR_ENCODER_PPR             1024
 #define REAR_EFFECTIVE_PPR           ((float)REAR_ENCODER_PPR * REAR_GEAR_RATIO)
-#define REAR_WHEEL_CIRCUM_M          (3.14159265358979323846f * REAR_WHEEL_DIAMETER_M)
-#define REAR_DISTANCE_PER_PULSE_M    REAR_ENCODER_METERS_PER_PULSE
 #define REAR_ENCODER_FEEDBACK_DIRECTION (-1)
+#define REAR_WHEEL_CIRCUM_M          (3.14159265358979323846f * REAR_WHEEL_DIAMETER_M)
 
 #define REAR_KP                 4.0f
 #define REAR_KI                 0.6f
@@ -18,6 +17,7 @@
 #define REAR_FF_GAIN            8.0f
 #define REAR_HIGH_SPEED_FF_START_MPS 2.5f
 #define REAR_HIGH_SPEED_FF_GAIN 500.0f
+
 #define REAR_PWM_HARD_LIMIT     9500
 #define REAR_PWM_RATE_LIMIT     600
 #define REAR_DIFF_PWM_GAIN      600.0f
@@ -48,14 +48,6 @@
 
 void rear_motor_init(void);
 void rear_motor_stop(void);
-void rear_motor_set_full_power(void);
-void rear_motor_set_target_mps(float target_mps);
-void rear_motor_set_speed_limit_mps(float limit_mps);
-void rear_motor_clear_speed_limit(void);
-
-void rear_motor_encoder_update_10ms(float yaw_deg);
-void rear_motor_pid_update_100ms(void);
-void rear_motor_open_loop_update(int16 pwm);
 
 void rear_motor_brake_start(void);
 void rear_motor_brake_update(void);
@@ -65,10 +57,18 @@ uint32 rear_motor_brake_elapsed_ms(void);
 int16 rear_motor_brake_pwm(void);
 float rear_motor_brake_end_raw_mps(void);
 
+void rear_motor_set_full_power(void);
+void rear_motor_set_target_mps(float target_mps);
+void rear_motor_set_speed_limit_mps(float limit_mps);
+void rear_motor_clear_speed_limit(void);
+void rear_motor_encoder_update_10ms(float yaw_deg);
+void rear_motor_discard_odometry_samples(void);
 uint8 rear_motor_take_odometry_sample(int32 *pulses, float *yaw_deg);
 uint32 rear_motor_get_odometry_merged_samples(void);
 int32 rear_motor_get_odometry_total_pulses(void);
 uint8 rear_motor_get_odometry_pending_samples(void);
+void rear_motor_pid_update_100ms(void);
+void rear_motor_open_loop_update(int16 pwm);
 
 float rear_motor_get_target_mps(void);
 float rear_motor_get_speed_mps(void);
@@ -78,9 +78,5 @@ float rear_motor_get_integral_pulses(void);
 int16 rear_motor_get_pwm(void);
 int16 rear_motor_get_encoder_10ms(void);
 int32 rear_motor_get_encoder_100ms(void);
-
-int32 rear_motor_get_total_encoder_pulses(void);
-float rear_motor_get_total_distance_m(void);
-void rear_motor_clear_odometer(void);
 
 #endif /* CODE_REAR_MOTOR_H_ */

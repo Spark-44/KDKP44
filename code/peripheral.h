@@ -42,7 +42,7 @@ extern Encoder_t Speed_ecd;
 extern Encoder_t guandao_ecd;
 extern Encoder_t Steer_ecd;
 
-#define l_ecdcounter()    encoder_get_count(ENCODER_QUADDEC)
+#define l_ecdcounter()    encoder_get_count(ENCODER_LEFT)
 #define BUZZER_PIN  (P33_10)
 #define KEY1                    (P20_6)
 #define KEY2                    (P20_7)
@@ -57,9 +57,13 @@ extern Encoder_t Steer_ecd;
 #define SERVO_MOTOR_LMAX            (65)
 #define SERVO_MOTOR_RMAX            (95)
 
-#define ENCODER_QUADDEC                 (TIM2_ENCODER)
-#define ENCODER_QUADDEC_A               (TIM2_ENCODER_CH1_P33_7)
-#define ENCODER_QUADDEC_B               (TIM2_ENCODER_CH2_P33_6)
+#define ENCODER_LEFT                    (TIM2_ENCODER)
+#define ENCODER_LEFT_A                  (TIM2_ENCODER_CH1_P33_7)
+#define ENCODER_LEFT_B                  (TIM2_ENCODER_CH2_P33_6)
+
+#define ENCODER_QUADDEC                 ENCODER_LEFT
+#define ENCODER_QUADDEC_A               ENCODER_LEFT_A
+#define ENCODER_QUADDEC_B               ENCODER_LEFT_B
 
 #define PWM_L1             (ATOM0_CH2_P21_4)
 #define PWM_L2             (ATOM0_CH3_P21_5)

@@ -33,8 +33,10 @@ Assert-Contains $main 'static\s+void\s+Record_Idle_Encoder_Diag_Update\s*\(\s*vo
 Assert-Contains $main 'if\s*\(\s*main_mode\s*!=\s*Guandao_Portion2_Recode\s*\)[\s\S]*?return\s*;' 'Encoder diagnostics must only run in record mode.'
 Assert-Contains $main 'if\s*\(\s*remote_control_is_active\s*\(\s*\)\s*\)[\s\S]*?return\s*;' 'Encoder diagnostics must not run while remote control is active.'
 Assert-Contains $main 'if\s*\(\s*conrtol_mode\s*!=\s*IDLE\s*\)[\s\S]*?return\s*;' 'Encoder diagnostics must only run while car control is idle.'
-Assert-Contains $main 'rear_motor_encoder_update_10ms\s*\(\s*Yaw_1\s*\)' 'Encoder diagnostics must sample encoder and yaw together.'
+Assert-Contains $main 'rear_motor_encoder_update_10ms\s*\(\s*Yaw_1\s*\)' 'Encoder diagnostics must sample the rear encoder with current yaw.'
+Assert-Contains $main 'rear_motor_get_odometry_total_pulses\s*\(\s*\)' 'Encoder diagnostics must print cumulative odometry pulses.'
+Assert-Contains $main '\(float\)rear_motor_get_odometry_total_pulses\s*\(\s*\)\s*\*\s*ONE_TICK_DISTANCE' 'Encoder diagnostics must calculate distance with the current route calibration.'
 Assert-Contains $main '\[ENC-DIAG\][\s\S]*?enc10=%d[\s\S]*?enc100=%ld[\s\S]*?actual=%\.2f[\s\S]*?pwm=%d' 'Encoder diagnostics must print pulses, actual speed and PWM.'
-Assert-NotContains $loop 'Record_Idle_Encoder_Diag_Update\s*\(\s*\)\s*;' 'Encoder diagnostics must not auto-refresh serial output from the main loop.'
+Assert-Contains $loop 'case\s+Guandao_Portion2_Recode[\s\S]*?Record_Idle_Encoder_Diag_Update\s*\(\s*\)\s*;[\s\S]*?portion2_record_task\s*\(\s*\)\s*;' 'Record mode must sample the rear encoder before consuming the odometry queue.'
 
 Write-Host 'Record idle encoder diagnostic checks passed.'

@@ -263,21 +263,22 @@ void Moter_Set(int moter_l , int moter_r)
     pwm_set_duty(PWM_L2, 0);
     pwm_set_duty(PWM_R1, 0);
     pwm_set_duty(PWM_R2, 0);
-    if(moter_l>=0)
+
+    if(moter_l > 0)
     {
         pwm_set_duty(PWM_L1, moter_l);
     }
-    else if(moter_l<0)
+    else if(moter_l < 0)
     {
         pwm_set_duty(PWM_L2, -moter_l);
     }
-    if(moter_r>=0)
+    if(moter_r > 0)
     {
         pwm_set_duty(PWM_R1, moter_r);
     }
-    else if(moter_r<0)
+    else if(moter_r < 0)
     {
-        pwm_set_duty(PWM_R2,-moter_r );
+        pwm_set_duty(PWM_R2, -moter_r);
     }
 
 }

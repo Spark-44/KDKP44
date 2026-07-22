@@ -1,10 +1,6 @@
 #include "zf_common_headfile.h"
 #include "rear_motor/rear_motor.h"
 #include "rear_motor/rear_odometry_pose_buffer.h"
-#include "control.h"
-
-extern float out_v_l;
-extern float out_v_r;
 
 static float target_mps = 0.0f;
 static float actual_mps = 0.0f;
@@ -14,15 +10,15 @@ static uint8 speed_filter_initialized = 0;
 static int16 current_pwm = 0;
 static int16 encoder_10ms = 0;
 static int32 encoder_100ms_last = 0;
-static int16 last_encoder_count = 0;
-static uint8 encoder_first_read = 1;
+static rear_odometry_pose_buffer_t odometry_pose_buffer;
+static volatile int32 odometry_total_pulses = 0;
 
 static volatile int32 speed_window_build_pulses = 0;
 static volatile uint8 speed_window_build_samples = 0;
 static volatile int32 speed_window_ready_pulses = 0;
 static volatile uint16 speed_window_ready_count = 0;
-static volatile int32 odometry_total_pulses = 0;
-static rear_odometry_pose_buffer_t odometry_pose_buffer;
+static int16 last_encoder_count = 0;
+static uint8 encoder_first_read = 1;
 
 static float integral = 0.0f;
 static float last_error = 0.0f;
@@ -39,56 +35,34 @@ static int16 brake_output_pwm = 0;
 static float brake_start_speed_mps = 0.0f;
 static float brake_end_raw_mps = 0.0f;
 
-static void rear_motor_write_wheel(
-        pwm_channel_enum forward, pwm_channel_enum reverse,
-        int16 pwm, int16 previous_pwm)
-{
-    if((pwm > 0 && previous_pwm < 0) || (pwm < 0 && previous_pwm > 0))
-    {
-        pwm_set_duty(forward, 0);
-        pwm_set_duty(reverse, 0);
-    }
-
-    if(pwm > 0)
-    {
-        pwm_set_duty(reverse, 0);
-        pwm_set_duty(forward, (uint32)pwm);
-    }
-    else if(pwm < 0)
-    {
-        pwm_set_duty(forward, 0);
-        pwm_set_duty(reverse, (uint32)(-pwm));
-    }
-    else
-    {
-        pwm_set_duty(forward, 0);
-        pwm_set_duty(reverse, 0);
-    }
-}
-
 static void rear_motor_set_pwm(int16 pwm)
 {
-    int diff = (int)pwm - last_pwm;
+    extern float out_v_l;
+    extern float out_v_r;
+    extern MOTER_control_mode conrtol_mode;
+    int diff = pwm - last_pwm;
     int16 pwm_l;
     int16 pwm_r;
 
     if(diff > REAR_PWM_RATE_LIMIT) diff = REAR_PWM_RATE_LIMIT;
     if(diff < -REAR_PWM_RATE_LIMIT) diff = -REAR_PWM_RATE_LIMIT;
     last_pwm += diff;
+
     if(last_pwm > REAR_PWM_HARD_LIMIT) last_pwm = REAR_PWM_HARD_LIMIT;
     if(last_pwm < -REAR_PWM_HARD_LIMIT) last_pwm = -REAR_PWM_HARD_LIMIT;
 
-    current_pwm = (int16)last_pwm;
+    current_pwm = last_pwm;
     pwm_l = current_pwm;
     pwm_r = current_pwm;
 
     if(conrtol_mode == GUANDAO)
     {
-        int16 differential = (int16)((out_v_l - out_v_r) * REAR_DIFF_PWM_GAIN);
-        if(differential > 1500) differential = 1500;
-        if(differential < -1500) differential = -1500;
-        pwm_l = (int16)(pwm_l + differential);
-        pwm_r = (int16)(pwm_r - differential);
+        float diff_val = out_v_l - out_v_r;
+        int16 diff_pwm = (int16)(diff_val * REAR_DIFF_PWM_GAIN);
+        if(diff_pwm > 1500) diff_pwm = 1500;
+        if(diff_pwm < -1500) diff_pwm = -1500;
+        pwm_l = current_pwm + diff_pwm;
+        pwm_r = current_pwm - diff_pwm;
     }
 
     if(pwm_l > REAR_PWM_HARD_LIMIT) pwm_l = REAR_PWM_HARD_LIMIT;
@@ -96,17 +70,51 @@ static void rear_motor_set_pwm(int16 pwm)
     if(pwm_r > REAR_PWM_HARD_LIMIT) pwm_r = REAR_PWM_HARD_LIMIT;
     if(pwm_r < -REAR_PWM_HARD_LIMIT) pwm_r = -REAR_PWM_HARD_LIMIT;
 
-    rear_motor_write_wheel(PWM_L1, PWM_L2, pwm_l, applied_pwm_l);
-    rear_motor_write_wheel(PWM_R1, PWM_R2, pwm_r, applied_pwm_r);
+    if((pwm_l > 0 && applied_pwm_l < 0) || (pwm_l < 0 && applied_pwm_l > 0))
+    {
+        pwm_set_duty(PWM_L1, 0);
+        pwm_set_duty(PWM_L2, 0);
+    }
+    if((pwm_r > 0 && applied_pwm_r < 0) || (pwm_r < 0 && applied_pwm_r > 0))
+    {
+        pwm_set_duty(PWM_R1, 0);
+        pwm_set_duty(PWM_R2, 0);
+    }
+
+    if(pwm_l > 0)
+    {
+        pwm_set_duty(PWM_L2, 0);
+        pwm_set_duty(PWM_L1, pwm_l);
+    }
+    else if(pwm_l < 0)
+    {
+        pwm_set_duty(PWM_L1, 0);
+        pwm_set_duty(PWM_L2, -pwm_l);
+    }
+    else
+    {
+        pwm_set_duty(PWM_L1, 0);
+        pwm_set_duty(PWM_L2, 0);
+    }
+
+    if(pwm_r > 0)
+    {
+        pwm_set_duty(PWM_R2, 0);
+        pwm_set_duty(PWM_R1, pwm_r);
+    }
+    else if(pwm_r < 0)
+    {
+        pwm_set_duty(PWM_R1, 0);
+        pwm_set_duty(PWM_R2, -pwm_r);
+    }
+    else
+    {
+        pwm_set_duty(PWM_R1, 0);
+        pwm_set_duty(PWM_R2, 0);
+    }
+
     applied_pwm_l = pwm_l;
     applied_pwm_r = pwm_r;
-}
-
-static void rear_motor_reset_controller(void)
-{
-    integral = 0.0f;
-    last_error = 0.0f;
-    last_pwm = 0;
 }
 
 void rear_motor_init(void)
@@ -124,15 +132,17 @@ void rear_motor_init(void)
     current_pwm = 0;
     encoder_10ms = 0;
     encoder_100ms_last = 0;
+    rear_odometry_pose_buffer_init(&odometry_pose_buffer);
+    odometry_total_pulses = 0;
     speed_window_build_pulses = 0;
     speed_window_build_samples = 0;
     speed_window_ready_pulses = 0;
     speed_window_ready_count = 0;
-    odometry_total_pulses = 0;
-    rear_odometry_pose_buffer_init(&odometry_pose_buffer);
     last_encoder_count = encoder_get_count(TIM2_ENCODER);
     encoder_first_read = 0;
-    rear_motor_reset_controller();
+    integral = 0.0f;
+    last_error = 0.0f;
+    last_pwm = 0;
     applied_pwm_l = 0;
     applied_pwm_r = 0;
     speed_limit_mps = 0.0f;
@@ -152,8 +162,10 @@ void rear_motor_stop(void)
     brake_active = 0;
     brake_output_pwm = 0;
     target_mps = 0.0f;
+    integral = 0.0f;
+    last_error = 0.0f;
+    last_pwm = 0;
     speed_limit_mps = 0.0f;
-    rear_motor_reset_controller();
     encoder_100ms_last = 0;
     actual_mps = 0.0f;
     raw_actual_mps = 0.0f;
@@ -179,19 +191,7 @@ void rear_motor_stop(void)
 
 void rear_motor_set_full_power(void)
 {
-    brake_active = 0;
-    target_mps = 0.0f;
-    speed_limit_mps = 0.0f;
-    integral = 0.0f;
-    last_error = 0.0f;
-    last_pwm = PWM_DUTY_MAX;
-    current_pwm = PWM_DUTY_MAX;
-    pwm_set_duty(PWM_L2, 0);
-    pwm_set_duty(PWM_R2, 0);
-    pwm_set_duty(PWM_L1, PWM_DUTY_MAX);
-    pwm_set_duty(PWM_R1, PWM_DUTY_MAX);
-    applied_pwm_l = PWM_DUTY_MAX;
-    applied_pwm_r = PWM_DUTY_MAX;
+    rear_motor_open_loop_update(REAR_PWM_HARD_LIMIT);
 }
 
 void rear_motor_set_target_mps(float mps)
@@ -199,12 +199,19 @@ void rear_motor_set_target_mps(float mps)
     if(mps > REAR_SPEED_MAX_MPS) mps = REAR_SPEED_MAX_MPS;
     if(mps < REAR_SPEED_MIN_MPS) mps = REAR_SPEED_MIN_MPS;
     target_mps = mps;
-    if(mps == 0.0f) rear_motor_reset_controller();
+
+    if(mps == 0.0f)
+    {
+        integral = 0.0f;
+        last_error = 0.0f;
+        last_pwm = 0;
+    }
 }
 
 void rear_motor_set_speed_limit_mps(float limit_mps)
 {
-    speed_limit_mps = (limit_mps < 0.0f) ? -limit_mps : limit_mps;
+    if(limit_mps < 0.0f) limit_mps = -limit_mps;
+    speed_limit_mps = limit_mps;
 }
 
 void rear_motor_clear_speed_limit(void)
@@ -215,7 +222,7 @@ void rear_motor_clear_speed_limit(void)
 void rear_motor_encoder_update_10ms(float yaw_deg)
 {
     int16 current_count = encoder_get_count(TIM2_ENCODER);
-    int32 delta = 0;
+    int32 raw_encoder_delta = 0;
 
     if(encoder_first_read)
     {
@@ -225,24 +232,26 @@ void rear_motor_encoder_update_10ms(float yaw_deg)
     }
     else
     {
-        delta = (int32)REAR_ENCODER_FEEDBACK_DIRECTION
+        raw_encoder_delta = (int32)REAR_ENCODER_FEEDBACK_DIRECTION
                 * (int32)calculate_delta(current_count, last_encoder_count);
-        last_encoder_count = current_count;
-        if(delta > REAR_ENCODER_DELTA_ABS_MAX || delta < -REAR_ENCODER_DELTA_ABS_MAX)
+        if(raw_encoder_delta > REAR_ENCODER_DELTA_ABS_MAX
+                || raw_encoder_delta < -REAR_ENCODER_DELTA_ABS_MAX)
         {
             encoder_10ms = 0;
         }
         else
         {
-            encoder_10ms = (int16)delta;
-            odometry_total_pulses += delta;
-            rear_odometry_pose_buffer_add(&odometry_pose_buffer, delta, yaw_deg);
+            encoder_10ms = (int16)raw_encoder_delta;
+            odometry_total_pulses += raw_encoder_delta;
+            rear_odometry_pose_buffer_add(&odometry_pose_buffer,
+                    raw_encoder_delta, yaw_deg);
         }
+        last_encoder_count = current_count;
     }
 
     speed_window_build_pulses += (int32)encoder_10ms;
     speed_window_build_samples++;
-    if(speed_window_build_samples >= 10u)
+    if(speed_window_build_samples >= 10)
     {
         speed_window_ready_pulses += speed_window_build_pulses;
         speed_window_ready_count++;
@@ -255,6 +264,7 @@ static uint8 rear_motor_take_speed_windows(int32 *pulses, uint16 *window_count)
 {
     uint32 interrupt_state = interrupt_global_disable();
     uint8 available = (speed_window_ready_count > 0u);
+
     if(available)
     {
         *pulses = speed_window_ready_pulses;
@@ -269,6 +279,7 @@ static uint8 rear_motor_take_speed_windows(int32 *pulses, uint16 *window_count)
 static float rear_motor_filter_speed(float measured_pulses)
 {
     raw_actual_mps = measured_pulses * REAR_ENCODER_METERS_PER_PULSE / 0.1f;
+
     if(!speed_filter_initialized)
     {
         filtered_pulses_100ms = measured_pulses;
@@ -279,8 +290,38 @@ static float rear_motor_filter_speed(float measured_pulses)
         filtered_pulses_100ms += REAR_SPEED_FILTER_ALPHA
                 * (measured_pulses - filtered_pulses_100ms);
     }
+
     actual_mps = filtered_pulses_100ms * REAR_ENCODER_METERS_PER_PULSE / 0.1f;
     return filtered_pulses_100ms;
+}
+
+static float rear_motor_apply_speed_limit(float pwm_f)
+{
+    float speed_abs;
+    float speed_limit_scale = 1.0f;
+
+    if(speed_limit_mps <= 0.0f) return pwm_f;
+
+    speed_abs = fabsf(actual_mps);
+    if(speed_abs > speed_limit_mps - REAR_SPEED_LIMIT_SOFT_ZONE_MPS)
+    {
+        speed_limit_scale = (speed_limit_mps - speed_abs)
+                / REAR_SPEED_LIMIT_SOFT_ZONE_MPS;
+        if(speed_limit_scale < 0.0f) speed_limit_scale = 0.0f;
+        if(speed_limit_scale > 1.0f) speed_limit_scale = 1.0f;
+    }
+
+    if(target_mps > 0.0f && pwm_f > 0.0f)
+    {
+        if(actual_mps >= speed_limit_mps) return 0.0f;
+        return pwm_f * speed_limit_scale;
+    }
+    if(target_mps < 0.0f && pwm_f < 0.0f)
+    {
+        if(actual_mps <= -speed_limit_mps) return 0.0f;
+        return pwm_f * speed_limit_scale;
+    }
+    return pwm_f;
 }
 
 void rear_motor_pid_update_100ms(void)
@@ -288,15 +329,17 @@ void rear_motor_pid_update_100ms(void)
     int32 window_pulses;
     uint16 window_count;
     float measured_pulses;
-    float target_pulses;
     float filtered_pulses;
+    float target_pulses;
     float error;
     float derivative;
     float ff;
+    float high_speed_ff = 0.0f;
+    float pid;
     float pwm_f;
-    float speed_limit_scale = 1.0f;
 
     if(!rear_motor_take_speed_windows(&window_pulses, &window_count)) return;
+
     measured_pulses = (float)window_pulses / (float)window_count;
     encoder_100ms_last = (int32)measured_pulses;
     filtered_pulses = rear_motor_filter_speed(measured_pulses);
@@ -321,40 +364,18 @@ void rear_motor_pid_update_100ms(void)
     ff = target_pulses * REAR_FF_GAIN;
     if(fabsf(target_mps) > REAR_HIGH_SPEED_FF_START_MPS)
     {
-        float high_speed_ff = (fabsf(target_mps) - REAR_HIGH_SPEED_FF_START_MPS)
+        high_speed_ff = (fabsf(target_mps) - REAR_HIGH_SPEED_FF_START_MPS)
                 * REAR_HIGH_SPEED_FF_GAIN;
-        ff += (target_mps < 0.0f) ? -high_speed_ff : high_speed_ff;
+        if(target_mps < 0.0f) high_speed_ff = -high_speed_ff;
+        ff += high_speed_ff;
     }
-
-    if(speed_limit_mps > 0.0f)
-    {
-        float speed_abs = fabsf(actual_mps);
-        if(target_mps > 0.0f && actual_mps >= speed_limit_mps) ff = 0.0f;
-        if(target_mps < 0.0f && actual_mps <= -speed_limit_mps) ff = 0.0f;
-        if(speed_abs > speed_limit_mps - REAR_SPEED_LIMIT_SOFT_ZONE_MPS)
-        {
-            speed_limit_scale = (speed_limit_mps - speed_abs)
-                    / REAR_SPEED_LIMIT_SOFT_ZONE_MPS;
-            if(speed_limit_scale < 0.0f) speed_limit_scale = 0.0f;
-            if(speed_limit_scale > 1.0f) speed_limit_scale = 1.0f;
-        }
-    }
-    pwm_f = ff + REAR_KP * error + REAR_KI * integral + REAR_KD * derivative;
-
+    pid = REAR_KP * error + REAR_KI * integral + REAR_KD * derivative;
+    pwm_f = ff + pid;
     if(target_mps < -0.01f && pwm_f > -(float)REAR_REVERSE_PWM_MIN)
-        pwm_f = -(float)REAR_REVERSE_PWM_MIN;
-
-    if(speed_limit_mps > 0.0f)
     {
-        if(target_mps > 0.0f && actual_mps >= speed_limit_mps && pwm_f > 0.0f)
-            pwm_f = 0.0f;
-        else if(target_mps > 0.0f && pwm_f > 0.0f)
-            pwm_f *= speed_limit_scale;
-        if(target_mps < 0.0f && actual_mps <= -speed_limit_mps && pwm_f < 0.0f)
-            pwm_f = 0.0f;
-        else if(target_mps < 0.0f && pwm_f < 0.0f)
-            pwm_f *= speed_limit_scale;
+        pwm_f = -(float)REAR_REVERSE_PWM_MIN;
     }
+    pwm_f = rear_motor_apply_speed_limit(pwm_f);
     rear_motor_set_pwm((int16)pwm_f);
 }
 
@@ -362,12 +383,14 @@ void rear_motor_open_loop_update(int16 pwm)
 {
     int32 window_pulses;
     uint16 window_count;
+
     if(rear_motor_take_speed_windows(&window_pulses, &window_count))
     {
         float measured_pulses = (float)window_pulses / (float)window_count;
         encoder_100ms_last = (int32)measured_pulses;
         rear_motor_filter_speed(measured_pulses);
     }
+
     target_mps = 0.0f;
     integral = 0.0f;
     last_error = 0.0f;
@@ -390,6 +413,7 @@ static void rear_motor_brake_finish(uint8 reason, float raw_speed_mps)
 void rear_motor_brake_start(void)
 {
     if(brake_active) return;
+
     brake_start_speed_mps = fabsf(actual_mps);
     brake_start_ms = system_getval_ms();
     brake_elapsed_ms = 0;
@@ -416,6 +440,7 @@ void rear_motor_brake_update(void)
     uint8 high_speed_guard;
 
     if(!brake_active) return;
+
     raw_speed_mps = raw_actual_mps;
     abs_speed_mps = fabsf(raw_speed_mps);
     brake_elapsed_ms = rear_motor_brake_time_since(system_getval_ms(), brake_start_ms);
@@ -427,7 +452,8 @@ void rear_motor_brake_update(void)
         return;
     }
     if(raw_speed_mps < -REAR_BRAKE_REVERSE_MPS
-            && (!high_speed_guard || brake_elapsed_ms >= REAR_BRAKE_HIGH_REVERSE_GUARD_MS))
+            && (!high_speed_guard
+                    || brake_elapsed_ms >= REAR_BRAKE_HIGH_REVERSE_GUARD_MS))
     {
         rear_motor_brake_finish(REAR_BRAKE_REASON_REVERSE, raw_speed_mps);
         return;
@@ -441,7 +467,8 @@ void rear_motor_brake_update(void)
     if(abs_speed_mps > 2.5f) brake_output_pwm = REAR_BRAKE_PWM_HIGH;
     else if(abs_speed_mps > 1.0f) brake_output_pwm = REAR_BRAKE_PWM_MID;
     else brake_output_pwm = REAR_BRAKE_PWM_LOW;
-    rear_motor_open_loop_update((int16)-brake_output_pwm);
+
+    rear_motor_open_loop_update(-brake_output_pwm);
 }
 
 uint8 rear_motor_brake_active(void) { return brake_active; }
@@ -449,24 +476,6 @@ uint8 rear_motor_brake_reason(void) { return brake_exit_reason; }
 uint32 rear_motor_brake_elapsed_ms(void) { return brake_elapsed_ms; }
 int16 rear_motor_brake_pwm(void) { return brake_output_pwm; }
 float rear_motor_brake_end_raw_mps(void) { return brake_end_raw_mps; }
-
-uint8 rear_motor_take_odometry_sample(int32 *pulses, float *yaw_deg)
-{
-    uint32 interrupt_state = interrupt_global_disable();
-    rear_odometry_pose_sample_t sample;
-    uint8 available = rear_odometry_pose_buffer_take(&odometry_pose_buffer, &sample);
-    interrupt_global_enable(interrupt_state);
-    if(available)
-    {
-        *pulses = (int32)sample.pulses;
-        *yaw_deg = sample.yaw_deg;
-    }
-    return available;
-}
-
-uint32 rear_motor_get_odometry_merged_samples(void) { return odometry_pose_buffer.merged_samples; }
-int32 rear_motor_get_odometry_total_pulses(void) { return odometry_total_pulses; }
-uint8 rear_motor_get_odometry_pending_samples(void) { return odometry_pose_buffer.count; }
 
 float rear_motor_get_target_mps(void) { return target_mps; }
 float rear_motor_get_speed_mps(void) { return actual_mps; }
@@ -477,16 +486,39 @@ int16 rear_motor_get_pwm(void) { return current_pwm; }
 int16 rear_motor_get_encoder_10ms(void) { return encoder_10ms; }
 int32 rear_motor_get_encoder_100ms(void) { return encoder_100ms_last; }
 
-int32 rear_motor_get_total_encoder_pulses(void) { return odometry_total_pulses; }
-float rear_motor_get_total_distance_m(void)
-{
-    return (float)odometry_total_pulses * REAR_ENCODER_METERS_PER_PULSE;
-}
-
-void rear_motor_clear_odometer(void)
+void rear_motor_discard_odometry_samples(void)
 {
     uint32 interrupt_state = interrupt_global_disable();
-    odometry_total_pulses = 0;
     rear_odometry_pose_buffer_init(&odometry_pose_buffer);
     interrupt_global_enable(interrupt_state);
+}
+
+uint8 rear_motor_take_odometry_sample(int32 *pulses, float *yaw_deg)
+{
+    uint32 interrupt_state = interrupt_global_disable();
+    rear_odometry_pose_sample_t sample;
+    uint8 available = rear_odometry_pose_buffer_take(&odometry_pose_buffer, &sample);
+    interrupt_global_enable(interrupt_state);
+
+    if(available)
+    {
+        *pulses = (int32)sample.pulses;
+        *yaw_deg = sample.yaw_deg;
+    }
+    return available;
+}
+
+uint32 rear_motor_get_odometry_merged_samples(void)
+{
+    return odometry_pose_buffer.merged_samples;
+}
+
+int32 rear_motor_get_odometry_total_pulses(void)
+{
+    return odometry_total_pulses;
+}
+
+uint8 rear_motor_get_odometry_pending_samples(void)
+{
+    return odometry_pose_buffer.count;
 }
