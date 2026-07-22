@@ -37,4 +37,15 @@
 		<nature>com.infineon.aurix.buildsystem.aurixnature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<filteredResources>
+		<filter>
+			<id>1721653200000</id>
+			<name></name>
+			<type>30</type>
+			<matcher>
+				<id>org.eclipse.core.resources.regexFilterMatcher</id>
+				<arguments>\.worktrees</arguments>
+			</matcher>
+		</filter>
+	</filteredResources>
 </projectDescription>
